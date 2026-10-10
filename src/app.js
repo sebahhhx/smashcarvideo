@@ -23,6 +23,8 @@
     exportMinutes: 20,
     brand: { name: 'SMASHCAR', title: 'BURGERS', note: 'TODAS LAS BURGERS LLEVAN PAPAS FRITAS', phone: '+56 9 9549 9633', web: 'SMASHCAR.CL', logo: null, script: null },
     effects: { steam: true, embers: true, fire: true, glow: true, rays: true, shake: true },
+    // márgenes en % del cuadro para pantallas con zonas dañadas o tapadas (por orientación)
+    safeArea: { horizontal: { top: 0, bottom: 0, left: 0, right: 0 }, vertical: { top: 0, bottom: 0, left: 0, right: 0 } },
     burgers: [
       { name: 'CLÁSICA', icon: 'bolt', defaultImage: 'b_clasica', ingredients: 'SMASH ANGUS, QUESO CHEDDAR, LECHUGA, PEPINILLO, CEBOLLA PICADA, SALSA SMASHCAR', prices: [{ label: 'SIMPLE', price: '$7.990' }, { label: 'DOBLE', price: '$9.990' }], badge: 1, note: '', big: false },
       { name: 'BACON BBQ CRISPY', icon: 'bbq', defaultImage: 'b_bacon', ingredients: 'SMASH ANGUS, QUESO CHEDDAR, BACON, CEBOLLA CRISPY, SALSA BBQ', prices: [{ label: 'SIMPLE', price: '$8.790' }, { label: 'DOBLE', price: '$10.790' }], badge: 1, note: '', big: false },
@@ -64,6 +66,11 @@
     const p = Object.assign(clone(DEFAULT), saved || {});
     p.brand = Object.assign(clone(DEFAULT.brand), p.brand);
     p.effects = Object.assign(clone(DEFAULT.effects), p.effects);
+    const sa = p.safeArea || {};
+    p.safeArea = {
+      horizontal: Object.assign(clone(DEFAULT.safeArea.horizontal), sa.horizontal),
+      vertical: Object.assign(clone(DEFAULT.safeArea.vertical), sa.vertical),
+    };
     if (saved && !saved.extras && Array.isArray(saved.drinks) && saved.drinks.length) {
       // proyectos antiguos: se usan los extras nuevos y se suman las bebidas viejas
       // que no repiten el precio de uno de ellos (ej. "LATA DE BEBIDA $1.600" = BEBIDAS)
@@ -156,7 +163,35 @@
         ? 'En vertical los extras siempre van en una franja abajo.'
         : 'Franja abajo: se leen mejor y caben fotos anchas. Columna: las burgers quedan más grandes.';
     }
+    drawSafeArea();
     $('#exportSpecs').textContent = `MP4 H.264 · ${size} · 30 fps. El loop se dibuja una vez y se repite hasta la duración elegida. Para los videos largos, Chrome te pregunta dónde guardarlo.`;
+  }
+
+  // Márgenes de la orientación actual. No hace falta reconstruir: el motor los lee al dibujar.
+  const SIDES = [['top', 'Arriba'], ['bottom', 'Abajo'], ['left', 'Izquierda'], ['right', 'Derecha']];
+  function drawSafeArea() {
+    const box = $('#safeArea');
+    if (!box) return;
+    const key = project.orientation === 'vertical' ? 'vertical' : 'horizontal';
+    const m = project.safeArea[key];
+    const apply = () => {
+      if (engine.p) engine.p.safeArea = clone(project.safeArea);
+      clearTimeout(saveTimer); saveTimer = setTimeout(() => DB.set('project', project), 600);
+      reset.disabled = SIDES.every(([k]) => !m[k]);
+    };
+    const rows = SIDES.map(([k, label]) => {
+      const out = h('output', { class: 'sa-val' }, `${m[k]} %`);
+      const range = h('input', { type: 'range', min: 0, max: 40, step: 0.5, value: m[k], 'aria-label': `Margen ${label.toLowerCase()}` });
+      range.addEventListener('input', () => { m[k] = +range.value; out.textContent = `${m[k]} %`; apply(); });
+      return h('label', { class: 'sa-row' }, h('span', {}, label), range, out);
+    });
+    const reset = h('button', { type: 'button', class: 'link', onclick: () => { for (const [k] of SIDES) m[k] = 0; drawSafeArea(); apply(); } }, 'Quitar márgenes');
+    reset.disabled = SIDES.every(([k]) => !m[k]);
+    box.replaceChildren(
+      h('span', {}, `Margen de seguridad · ${key === 'vertical' ? 'vertical' : 'horizontal'}`),
+      ...rows,
+      h('small', {}, 'Si una parte de la pantalla está rota o tapada, sube el margen de ese lado: el video se achica para caber en la zona buena y lo demás queda en negro. Usa "Pantalla completa" en la tele para ajustarlo en vivo.'),
+      reset);
   }
 
   // ------------------------------------------------------------ vista previa

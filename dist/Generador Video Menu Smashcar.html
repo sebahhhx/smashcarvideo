@@ -40,6 +40,11 @@ details:not([open]) summary::after{content:'▸'}
 input[type=text],input[type=number],textarea,select{width:100%;background:#0f0c0a;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 10px;font:inherit}
 textarea{resize:vertical}
 input:focus,textarea:focus,select:focus{outline:2px solid var(--yel);outline-offset:-1px}
+.safe-area{margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
+.sa-row{display:grid;grid-template-columns:80px 1fr 52px;gap:10px;align-items:center;margin:4px 0}
+.sa-row input{accent-color:var(--yel);width:100%}
+.sa-val{font-variant-numeric:tabular-nums;color:var(--muted);text-align:right}
+.safe-area .link:disabled{color:var(--muted);opacity:.5;cursor:default}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
 .check{display:flex;gap:9px;align-items:center;margin:7px 0;cursor:pointer}
@@ -114,6 +119,7 @@ input:focus,textarea:focus,select:focus{outline:2px solid var(--yel);outline-off
         <button type="button" class="btn" id="verticalBtn" aria-pressed="false">Vertical · 9:16</button>
       </div>
       <p class="muted" id="formatInfo"></p>
+      <div class="field safe-area" id="safeArea"></div>
     </div></details>
     <details open><summary>Burgers <em id="burgersSum"></em><small id="burgersCount"></small></summary><div class="inner" id="burgers"></div></details>
     <details open><summary>Extras <em id="extrasSum"></em><small id="extrasCount"></small></summary><div class="inner" id="extras"></div></details>
@@ -3276,9 +3282,37 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       this.embers(ctx, t);
     }
 
-    // Dibuja el instante t (se ajusta al loop).
+    // Zona útil de la pantalla según los márgenes (en % del cuadro) de la orientación actual.
+    // Devuelve null si no hay márgenes: el video ocupa todo el cuadro.
+    safeArea() {
+      const all = this.p.safeArea || {}, m = all[this.vertical ? 'vertical' : 'horizontal'] || {};
+      const pct = k => clamp(+m[k] || 0, 0, 45) / 100;
+      let top = pct('top'), bottom = pct('bottom'), left = pct('left'), right = pct('right');
+      if (top + bottom > 0.8) { const k = 0.8 / (top + bottom); top *= k; bottom *= k; }
+      if (left + right > 0.8) { const k = 0.8 / (left + right); left *= k; right *= k; }
+      if (!(top || bottom || left || right)) return null;
+      const W0 = this.width, H0 = this.height;
+      const x = left * W0, y = top * H0, w = W0 * (1 - left - right), h = H0 * (1 - top - bottom);
+      const s = Math.min(w / W0, h / H0);
+      return { x: x + (w - W0 * s) / 2, y: y + (h - H0 * s) / 2, s };
+    }
+
+    // Dibuja el instante t (se ajusta al loop). Con márgenes, el cuadro completo se
+    // achica para caber en la zona útil y el resto queda en negro.
     render(ctx, t) {
       if (!this.ready) return;
+      const area = this.safeArea();
+      if (!area) return this.renderFrame(ctx, t);
+      ctx.save();
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, this.width, this.height);
+      ctx.translate(area.x, area.y);
+      ctx.scale(area.s, area.s);
+      ctx.beginPath(); ctx.rect(0, 0, this.width, this.height); ctx.clip();
+      this.renderFrame(ctx, t);
+      ctx.restore();
+    }
+
+    renderFrame(ctx, t) {
       const tl = this.timeline();
       t = ((t % tl.L) + tl.L) % tl.L;
       ctx.save();
@@ -3474,6 +3508,8 @@ if (!window.SMASH_ASSETS || !window.SmashEngine) {
     exportMinutes: 20,
     brand: { name: 'SMASHCAR', title: 'BURGERS', note: 'TODAS LAS BURGERS LLEVAN PAPAS FRITAS', phone: '+56 9 9549 9633', web: 'SMASHCAR.CL', logo: null, script: null },
     effects: { steam: true, embers: true, fire: true, glow: true, rays: true, shake: true },
+    // márgenes en % del cuadro para pantallas con zonas dañadas o tapadas (por orientación)
+    safeArea: { horizontal: { top: 0, bottom: 0, left: 0, right: 0 }, vertical: { top: 0, bottom: 0, left: 0, right: 0 } },
     burgers: [
       { name: 'CLÁSICA', icon: 'bolt', defaultImage: 'b_clasica', ingredients: 'SMASH ANGUS, QUESO CHEDDAR, LECHUGA, PEPINILLO, CEBOLLA PICADA, SALSA SMASHCAR', prices: [{ label: 'SIMPLE', price: '$7.990' }, { label: 'DOBLE', price: '$9.990' }], badge: 1, note: '', big: false },
       { name: 'BACON BBQ CRISPY', icon: 'bbq', defaultImage: 'b_bacon', ingredients: 'SMASH ANGUS, QUESO CHEDDAR, BACON, CEBOLLA CRISPY, SALSA BBQ', prices: [{ label: 'SIMPLE', price: '$8.790' }, { label: 'DOBLE', price: '$10.790' }], badge: 1, note: '', big: false },
@@ -3515,6 +3551,11 @@ if (!window.SMASH_ASSETS || !window.SmashEngine) {
     const p = Object.assign(clone(DEFAULT), saved || {});
     p.brand = Object.assign(clone(DEFAULT.brand), p.brand);
     p.effects = Object.assign(clone(DEFAULT.effects), p.effects);
+    const sa = p.safeArea || {};
+    p.safeArea = {
+      horizontal: Object.assign(clone(DEFAULT.safeArea.horizontal), sa.horizontal),
+      vertical: Object.assign(clone(DEFAULT.safeArea.vertical), sa.vertical),
+    };
     if (saved && !saved.extras && Array.isArray(saved.drinks) && saved.drinks.length) {
       // proyectos antiguos: se usan los extras nuevos y se suman las bebidas viejas
       // que no repiten el precio de uno de ellos (ej. "LATA DE BEBIDA $1.600" = BEBIDAS)
@@ -3607,7 +3648,35 @@ if (!window.SMASH_ASSETS || !window.SmashEngine) {
         ? 'En vertical los extras siempre van en una franja abajo.'
         : 'Franja abajo: se leen mejor y caben fotos anchas. Columna: las burgers quedan más grandes.';
     }
+    drawSafeArea();
     $('#exportSpecs').textContent = `MP4 H.264 · ${size} · 30 fps. El loop se dibuja una vez y se repite hasta la duración elegida. Para los videos largos, Chrome te pregunta dónde guardarlo.`;
+  }
+
+  // Márgenes de la orientación actual. No hace falta reconstruir: el motor los lee al dibujar.
+  const SIDES = [['top', 'Arriba'], ['bottom', 'Abajo'], ['left', 'Izquierda'], ['right', 'Derecha']];
+  function drawSafeArea() {
+    const box = $('#safeArea');
+    if (!box) return;
+    const key = project.orientation === 'vertical' ? 'vertical' : 'horizontal';
+    const m = project.safeArea[key];
+    const apply = () => {
+      if (engine.p) engine.p.safeArea = clone(project.safeArea);
+      clearTimeout(saveTimer); saveTimer = setTimeout(() => DB.set('project', project), 600);
+      reset.disabled = SIDES.every(([k]) => !m[k]);
+    };
+    const rows = SIDES.map(([k, label]) => {
+      const out = h('output', { class: 'sa-val' }, `${m[k]} %`);
+      const range = h('input', { type: 'range', min: 0, max: 40, step: 0.5, value: m[k], 'aria-label': `Margen ${label.toLowerCase()}` });
+      range.addEventListener('input', () => { m[k] = +range.value; out.textContent = `${m[k]} %`; apply(); });
+      return h('label', { class: 'sa-row' }, h('span', {}, label), range, out);
+    });
+    const reset = h('button', { type: 'button', class: 'link', onclick: () => { for (const [k] of SIDES) m[k] = 0; drawSafeArea(); apply(); } }, 'Quitar márgenes');
+    reset.disabled = SIDES.every(([k]) => !m[k]);
+    box.replaceChildren(
+      h('span', {}, `Margen de seguridad · ${key === 'vertical' ? 'vertical' : 'horizontal'}`),
+      ...rows,
+      h('small', {}, 'Si una parte de la pantalla está rota o tapada, sube el margen de ese lado: el video se achica para caber en la zona buena y lo demás queda en negro. Usa "Pantalla completa" en la tele para ajustarlo en vivo.'),
+      reset);
   }
 
   // ------------------------------------------------------------ vista previa

@@ -1209,9 +1209,37 @@
       this.embers(ctx, t);
     }
 
-    // Dibuja el instante t (se ajusta al loop).
+    // Zona útil de la pantalla según los márgenes (en % del cuadro) de la orientación actual.
+    // Devuelve null si no hay márgenes: el video ocupa todo el cuadro.
+    safeArea() {
+      const all = this.p.safeArea || {}, m = all[this.vertical ? 'vertical' : 'horizontal'] || {};
+      const pct = k => clamp(+m[k] || 0, 0, 45) / 100;
+      let top = pct('top'), bottom = pct('bottom'), left = pct('left'), right = pct('right');
+      if (top + bottom > 0.8) { const k = 0.8 / (top + bottom); top *= k; bottom *= k; }
+      if (left + right > 0.8) { const k = 0.8 / (left + right); left *= k; right *= k; }
+      if (!(top || bottom || left || right)) return null;
+      const W0 = this.width, H0 = this.height;
+      const x = left * W0, y = top * H0, w = W0 * (1 - left - right), h = H0 * (1 - top - bottom);
+      const s = Math.min(w / W0, h / H0);
+      return { x: x + (w - W0 * s) / 2, y: y + (h - H0 * s) / 2, s };
+    }
+
+    // Dibuja el instante t (se ajusta al loop). Con márgenes, el cuadro completo se
+    // achica para caber en la zona útil y el resto queda en negro.
     render(ctx, t) {
       if (!this.ready) return;
+      const area = this.safeArea();
+      if (!area) return this.renderFrame(ctx, t);
+      ctx.save();
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, this.width, this.height);
+      ctx.translate(area.x, area.y);
+      ctx.scale(area.s, area.s);
+      ctx.beginPath(); ctx.rect(0, 0, this.width, this.height); ctx.clip();
+      this.renderFrame(ctx, t);
+      ctx.restore();
+    }
+
+    renderFrame(ctx, t) {
       const tl = this.timeline();
       t = ((t % tl.L) + tl.L) % tl.L;
       ctx.save();

@@ -37,6 +37,11 @@ details:not([open]) summary::after{content:'▸'}
 input[type=text],input[type=number],textarea,select{width:100%;background:#0f0c0a;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 10px;font:inherit}
 textarea{resize:vertical}
 input:focus,textarea:focus,select:focus{outline:2px solid var(--yel);outline-offset:-1px}
+.safe-area{margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
+.sa-row{display:grid;grid-template-columns:80px 1fr 52px;gap:10px;align-items:center;margin:4px 0}
+.sa-row input{accent-color:var(--yel);width:100%}
+.sa-val{font-variant-numeric:tabular-nums;color:var(--muted);text-align:right}
+.safe-area .link:disabled{color:var(--muted);opacity:.5;cursor:default}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
 .check{display:flex;gap:9px;align-items:center;margin:7px 0;cursor:pointer}
@@ -111,6 +116,7 @@ input:focus,textarea:focus,select:focus{outline:2px solid var(--yel);outline-off
         <button type="button" class="btn" id="verticalBtn" aria-pressed="false">Vertical · 9:16</button>
       </div>
       <p class="muted" id="formatInfo"></p>
+      <div class="field safe-area" id="safeArea"></div>
     </div></details>
     <details open><summary>Burgers <em id="burgersSum"></em><small id="burgersCount"></small></summary><div class="inner" id="burgers"></div></details>
     <details open><summary>Extras <em id="extrasSum"></em><small id="extrasCount"></small></summary><div class="inner" id="extras"></div></details>

@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smashcar · Video menú</title>
+<style>
+/*FONTS*/
+:root{--bg:#0d0b09;--panel:#17130f;--panel2:#201a14;--line:#33291f;--ink:#f4efe8;--muted:#a99b8a;--yel:#f5b82e;--red:#e82c28}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.4 Roboto,system-ui,sans-serif}
+header{display:flex;align-items:center;gap:14px;padding:10px 18px;border-bottom:1px solid var(--line);background:#0a0807;position:sticky;top:0;z-index:5}
+header img{height:38px}
+header h1{font:26px Anton,Impact,sans-serif;letter-spacing:.5px;margin:0;color:var(--yel)}
+header h1 span{color:var(--ink)}
+header .sp{flex:1}
+main{display:grid;grid-template-columns:420px 1fr;height:calc(100% - 59px)}
+aside{overflow:auto;border-right:1px solid var(--line);padding:14px 14px 40px;background:var(--panel)}
+section.stage{overflow:auto;padding:18px 22px 40px}
+details{border:1px solid var(--line);border-radius:10px;margin-bottom:12px;background:var(--panel2)}
+summary{cursor:pointer;padding:11px 14px;font:18px Anton,Impact,sans-serif;letter-spacing:.4px;color:var(--yel);list-style:none;display:flex;align-items:baseline;gap:8px}
+summary em{font-style:normal;color:var(--ink);opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+summary em:not(:empty)::before{content:'· ';color:var(--muted)}
+summary small{margin-left:auto;font:12px Roboto,system-ui,sans-serif;color:var(--muted);letter-spacing:0;white-space:nowrap}
+.section-head{border-bottom:1px dashed var(--line);margin-bottom:12px;padding-bottom:2px}
+summary::-webkit-details-marker{display:none}
+summary::after{content:'▾';color:var(--muted)}
+summary:not(:has(small))::after{margin-left:auto}
+details:not([open]) summary::after{content:'▸'}
+.inner{padding:0 14px 14px}
+.field{display:block;margin:0 0 10px}
+.field>.orientation{display:flex}
+.field>.orientation .btn{flex:1}
+.orientation .btn:disabled{opacity:.4}
+.field>span{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px}
+.field small,.photo small{display:block;color:var(--muted);font-size:12px;margin-top:3px}
+input[type=text],input[type=number],textarea,select{width:100%;background:#0f0c0a;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 10px;font:inherit}
+textarea{resize:vertical}
+input:focus,textarea:focus,select:focus{outline:2px solid var(--yel);outline-offset:-1px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.check{display:flex;gap:9px;align-items:center;margin:7px 0;cursor:pointer}
+.check input{accent-color:var(--yel);width:17px;height:17px}
+.card{border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px;background:#120f0c}
+.card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.card-head strong{font:17px Anton,Impact,sans-serif;letter-spacing:.4px;color:var(--yel)}
+.btns{display:flex;gap:4px}
+.photo{display:flex;gap:12px;align-items:center;margin-bottom:10px}
+.thumb{width:160px;height:96px;flex:none;object-fit:contain;background:repeating-conic-gradient(#1c1712 0 25%,#141110 0 50%) 0 0/16px 16px;border-radius:8px;border:1px solid var(--line)}
+.drink-empty{display:grid;place-items:center;color:var(--muted);font:18px Anton,Impact,sans-serif;letter-spacing:.5px;flex:none}
+.asset{display:flex;gap:10px;align-items:center;margin:8px 0}
+.mini{height:38px;max-width:110px;object-fit:contain}
+.prices{display:grid;gap:6px}
+.price-row{display:grid;grid-template-columns:1fr 1fr 30px;gap:6px}
+.btn{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font:inherit;cursor:pointer}
+.btn:hover{border-color:var(--yel)}
+.btn.wide{width:100%}
+.btn.primary{background:var(--yel);color:#120e0a;border-color:var(--yel);font:20px Anton,Impact,sans-serif;letter-spacing:.5px;padding:10px 22px}
+.btn.primary:disabled{opacity:.5;cursor:wait}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.icon-btn{background:none;border:1px solid var(--line);color:var(--ink);border-radius:6px;width:30px;height:30px;cursor:pointer}
+.icon-btn:disabled{opacity:.35;cursor:default}
+.icon-btn.danger:hover{border-color:var(--red)}
+.link{background:none;border:0;color:var(--yel);padding:4px 0;cursor:pointer;font:inherit;text-align:left}
+.muted{color:var(--muted);margin:2px 0 0}
+.screen{position:relative;width:100%;max-width:1280px;aspect-ratio:16/9;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:#000}
+.screen.vertical{width:min(100%,440px,calc((100vh - 150px) * 9 / 16));min-width:280px;aspect-ratio:9/16;margin-inline:auto}
+@media (min-width:1400px){.screen.vertical{width:min(100%,520px,calc((100vh - 150px) * 9 / 16))}}
+.screen canvas{width:100%;height:100%;display:block}
+.stage-head{display:flex;align-items:center;justify-content:space-between;gap:16px;max-width:1280px;margin-bottom:12px}
+.stage-head h2{font:20px Anton,Impact,sans-serif;letter-spacing:.4px;color:var(--yel);margin:0}
+.orientation{display:flex;gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:4px}
+.orientation .btn{border:0;background:transparent;padding:6px 12px}
+.orientation .btn[aria-pressed=true]{background:var(--yel);color:#120e0a}
+.controls{display:flex;align-items:center;gap:12px;max-width:1280px;margin:10px 0}
+.controls input[type=range]{flex:1;accent-color:var(--yel)}
+#time{font-variant-numeric:tabular-nums;color:var(--muted);min-width:120px;text-align:right}
+#scenes{display:flex;flex-wrap:wrap;gap:6px;max-width:1280px;margin-bottom:16px}
+.chip{background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:5px 12px;cursor:pointer;font:inherit;font-size:13px}
+.chip:hover{border-color:var(--yel)}
+.export{max-width:1280px;border:1px solid var(--line);border-radius:12px;padding:16px 18px;background:var(--panel)}
+.export h2{font:22px Anton,Impact,sans-serif;letter-spacing:.4px;margin:0 0 10px;color:var(--yel)}
+.export .row{display:flex;gap:14px;align-items:end;flex-wrap:wrap}
+.export .row .field{margin:0;min-width:240px}
+#progress{margin-top:14px}
+.track{height:12px;border-radius:99px;background:#0f0c0a;border:1px solid var(--line);overflow:hidden}
+#bar{height:100%;width:0;background:linear-gradient(90deg,#e8902a,var(--yel));transition:width .2s}
+#pmsg{margin:8px 0 0}
+.warn{background:#3a1512;border:1px solid var(--red);border-radius:8px;padding:10px 12px;margin-top:10px}
+#status{color:var(--muted);font-size:13px;min-height:18px}
+@media (max-width:900px){main{grid-template-columns:1fr;height:auto}aside{border-right:0}}
+@media (max-width:600px){header{flex-wrap:wrap}header .sp{flex-basis:100%}.stage-head{align-items:flex-start;flex-direction:column}.orientation{width:100%}.orientation .btn{flex:1}}
+</style>
+</head>
+<body>
+<header>
+  <img src="" id="hdrLogo" alt="">
+  <h1>SMASHCAR <span>· VIDEO MENÚ</span></h1>
+  <div class="sp"></div>
+  <span id="status"></span>
+  <button class="btn" id="openBtn">Abrir proyecto</button>
+  <button class="btn" id="saveBtn">Guardar proyecto</button>
+  <button class="btn" id="resetBtn">Restablecer</button>
+</header>
+<main>
+  <aside>
+    <details open><summary>Formato de pantalla</summary><div class="inner">
+      <p class="muted">Elige cómo está instalada la pantalla. La vista previa y el MP4 usarán este formato.</p>
+      <div class="orientation" role="group" aria-label="Orientación del video">
+        <button type="button" class="btn" id="horizontalBtn" aria-pressed="true">Horizontal · 16:9</button>
+        <button type="button" class="btn" id="verticalBtn" aria-pressed="false">Vertical · 9:16</button>
+      </div>
+      <p class="muted" id="formatInfo"></p>
+    </div></details>
+    <details open><summary>Burgers <em id="burgersSum"></em><small id="burgersCount"></small></summary><div class="inner" id="burgers"></div></details>
+    <details open><summary>Extras <em id="extrasSum"></em><small id="extrasCount"></small></summary><div class="inner" id="extras"></div></details>
+    <details open><summary>Tiempos</summary><div class="inner" id="times"></div></details>
+    <details><summary>Marca y contacto</summary><div class="inner" id="brand"></div></details>
+    <details><summary>Efectos</summary><div class="inner" id="effects"></div></details>
+    <p class="muted">Los cambios se guardan solos en este navegador. Usa "Guardar proyecto" para tener una copia en un archivo.</p>
+  </aside>
+  <section class="stage">
+    <div class="stage-head"><h2>Vista previa</h2><span class="muted" id="previewFormat"></span></div>
+    <div class="screen" id="screen"><canvas id="preview" width="1920" height="1080"></canvas></div>
+    <div class="controls">
+      <button class="icon-btn" id="play" title="Pausa / reproducir">❚❚</button>
+      <input type="range" id="scrub" min="0" max="1000" value="0">
+      <span id="time"></span>
+      <button class="btn" id="fsBtn">Pantalla completa</button>
+    </div>
+    <div id="scenes"></div>
+    <div class="export">
+      <h2>Exportar para el USB</h2>
+      <div class="row">
+        <label class="field"><span>Duración del video</span>
+          <select id="minutes">
+            <option value="0">Solo 1 loop (para teles con "repetir")</option>
+            <option value="5">5 minutos</option>
+            <option value="10">10 minutos</option>
+            <option value="20">20 minutos</option>
+            <option value="30">30 minutos</option>
+            <option value="60">1 hora</option>
+            <option value="120">2 horas</option>
+          </select>
+        </label>
+        <button class="btn primary" id="exportBtn">EXPORTAR MP4</button>
+      </div>
+      <p class="muted" id="exportInfo"></p>
+      <p class="muted" id="exportSpecs">MP4 H.264 · 1920×1080 · 30 fps. El loop se dibuja una vez y se repite hasta la duración elegida. Para los videos largos, Chrome te pregunta dónde guardarlo.</p>
+      <div class="warn" id="exportWarn" hidden>Este navegador no puede exportar video. Abre este archivo con Google Chrome o Microsoft Edge.</div>
+      <div id="progress" hidden>
+        <div class="track"><div id="bar"></div></div>
+        <p id="pmsg" class="muted"></p>
+        <button class="link" id="cancelBtn">Cancelar</button>
+      </div>
+    </div>
+  </section>
+</main>
+<script>/*ASSETS*/</script>
+<script>/*MUXER*/</script>
+<script>/*ENGINE*/</script>
+<script>/*EXPORTER*/</script>
+<script>
+if (!window.SMASH_ASSETS || !window.SmashEngine) {
+  // La plantilla de src necesita el HTML armado, que incluye fotos y tipografías.
+  location.replace(new URL('../dist/Generador Video Menu Smashcar.html', location.href).href);
+} else {
+  document.getElementById('hdrLogo').src = window.SMASH_ASSETS.logo;
+}
+</script>
+<script>/*APP*/</script>
+</body>
+</html>

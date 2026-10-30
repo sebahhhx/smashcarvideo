@@ -485,6 +485,17 @@
       S.menuTitle = text(brand.title, `112px ${ANTON}`, WHITE);
       S.menuNote = paraSprite(brand.note, `48px ${BEBAS}`, YEL, 1250, 52);
       S.extraTitle = text(p.extras.title, `70px ${ANTON}`, WHITE);
+      S.sideFries = null;
+      const sf = p.sideFries || {};
+      if (sf.enabled !== false) {
+        const raw = sf.image ? await this.img(sf.image) : img.x_papas;
+        const key = sf.image ? sf.image.length + ':' + sf.image.slice(-80) : 'def:x_papas';
+        const label = String(sf.label || '').toUpperCase().trim();
+        if (raw) S.sideFries = {
+          spr: await this.cached('side:' + key, async () => shadowed(await fitH(removeFlatBackground(raw).canvas, 300, 560), { off: 6, blur: 9, op: 0.6 })),
+          label: label ? text(label, `34px ${ANTON}`, DARK, { shadow: false }) : null,
+        };
+      }
       S.extraNote = p.extras.note ? text(p.extras.note, `40px ${BEBAS}`, YEL) : null;
       if (p.orientation === 'vertical') {
         S.bar_v = await this.verticalBar(brand, img);
@@ -1089,13 +1100,32 @@
       });
     }
 
+    // Burger con una porción chica de papas adelante, abajo a la derecha, y la etiqueta "+ PAPAS".
+    burgerWithFries(ctx, spot, sf, x, y, h, g, focus) {
+      const im = g.img;
+      const s = Math.min(1, im.w * 0.88 / spot.width, im.h * 0.94 / spot.height) * (1 + 0.05 * focus);
+      const bw = spot.width * s, bh = spot.height * s, bcx = x + im.cx - im.w * 0.1, bcy = y + im.cy;
+      draw(ctx, spot, bcx, bcy, { sx: s });
+      const fs = Math.min(im.w * 0.6 / sf.spr.width, bh * 0.46 / sf.spr.height);
+      const fw = sf.spr.width * fs, fh = sf.spr.height * fs, bottom = bcy + bh / 2 + 4;
+      const right = g.stacked ? x + im.cx + im.w / 2 : x + g.textX - 14;
+      const fcx = Math.min(bcx + bw * 0.4, right - fw / 2);
+      draw(ctx, sf.spr, fcx, bottom - fh / 2, { sx: fs });
+      if (sf.label) {
+        const ls = clamp(h / 340, 0.55, 1) * (g.stacked ? 1.2 : 1);
+        this.tagPill(ctx, sf.label, fcx, bottom - 6, 1, 'c', 12, ls);
+      }
+    }
+
     menuCard(ctx, b, i, r, focus) {
       const { x, y, w, h } = r, g = this.geom;
       const scale = 1 + 0.03 * focus, cx = x + w / 2, cy = y + h / 2;
       ctx.save(); ctx.translate(cx, cy); ctx.scale(scale, scale); ctx.translate(-cx, -cy);
       this.menuCardFrame(ctx, x, y, w, h, focus, i);
       this.glow(ctx, x + g.img.cx, y + g.img.cy, g.img.w * 1.5, g.img.h * 1.3, 0.35 * focus);
-      drawFit(ctx, b.spot, x + g.img.cx, y + g.img.cy, g.img.w, g.img.h, { sx: 1 + 0.05 * focus });
+      const sf = this.S.sideFries;
+      if (sf && b.spot) this.burgerWithFries(ctx, b.spot, sf, x, y, h, g, focus);
+      else drawFit(ctx, b.spot, x + g.img.cx, y + g.img.cy, g.img.w, g.img.h, { sx: 1 + 0.05 * focus });
       const tx = x + g.textX, anchor = g.stacked ? 'c' : 'l';
       drawFit(ctx, b.menuName, tx, y + g.nameY, g.textW + 40, g.nameH, { anchor });
       if (b.menuIng) {
@@ -1286,14 +1316,14 @@
     }
 
     // Etiqueta amarilla (COMBO, PROMO…) con el texto oscuro encima.
-    tagPill(ctx, spr, x, y, a, anchor = 'l', pad = 18) {
+    tagPill(ctx, spr, x, y, a, anchor = 'l', pad = 18, sc = 1) {
       if (!spr || a <= 0.003) return;
-      const w = spr.width + pad * 2, h = spr.height + pad * 0.7, left = anchor === 'l' ? x : x - w / 2;
+      const w = (spr.width + pad * 2) * sc, h = (spr.height + pad * 0.7) * sc, left = anchor === 'l' ? x : x - w / 2;
       ctx.save(); ctx.globalAlpha = Math.min(1, a);
       ctx.fillStyle = YEL; ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 4;
       ctx.beginPath(); ctx.roundRect(left, y - h / 2, w, h, h / 2); ctx.fill();
       ctx.restore();
-      draw(ctx, spr, left + w / 2, y, { a });
+      draw(ctx, spr, left + w / 2, y, { a, sx: sc });
     }
 
     promoScene(ctx, t, tl) {

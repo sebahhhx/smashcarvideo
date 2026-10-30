@@ -42,6 +42,8 @@
     // carta en Restu: de ahí salen los precios y las promos (catalog es la última copia descargada)
     restu: { slug: 'smashcar', catalog: null, lastSync: null },
     promos: { items: [] },
+    // porción chica de papas junto a cada burger, para que se vea que vienen incluidas
+    sideFries: { enabled: true, image: null, label: '+ PAPAS' },
   };
   const ICONS = [['bolt', 'Rayo'], ['bbq', 'Parrilla'], ['onion', 'Cebolla'], ['mush', 'Champiñón'], ['burger', 'Logo burger'], ['custom', 'Subir imagen…']];
 
@@ -102,6 +104,7 @@
     p.durations = Object.assign(clone(DEFAULT.durations), p.durations);
     p.restu = Object.assign(clone(DEFAULT.restu), p.restu);
     p.promos = Object.assign(clone(DEFAULT.promos), p.promos);
+    p.sideFries = Object.assign(clone(DEFAULT.sideFries), p.sideFries);
     p.promos.items = Array.isArray(p.promos.items) ? p.promos.items.filter(Boolean) : [];
     ensureUids(p);
     if (p.brand.note === 'TODOS LOS COMBOS LLEVAN PAPAS FRITAS') p.brand.note = DEFAULT.brand.note;
@@ -331,9 +334,31 @@
       b.prices.length < 2 ? field('Nota (si tiene un solo precio)', textInput(b, 'note', { upper: true }), 'Ej: 400 GR SMASH ANGUS') : null,
       check(b, 'big', 'Burger grande (se muestra más alta, como la Quadra)'));
   }
+  // Papas junto a cada burger: se activa, se cambia la foto y el texto de la etiqueta.
+  function sideFriesBox() {
+    const sf = project.sideFries;
+    const on = h('input', { type: 'checkbox' }); on.checked = sf.enabled !== false;
+    on.addEventListener('change', () => { sf.enabled = on.checked; drawBurgers(); changed(true); });
+    const parts = [h('label', { class: 'check' }, on, 'Mostrar una porción de papas al lado de cada burger')];
+    if (sf.enabled !== false) {
+      parts.push(
+        h('div', { class: 'photo' },
+          h('img', { class: 'thumb', alt: '', src: sf.image || ASSETS.x_papas }),
+          h('div', {},
+            h('button', { class: 'btn', onclick: async () => {
+              const f = await pickFile('image/png,image/webp,image/jpeg'); if (!f) return;
+              sf.image = await readExtraPhoto(f); drawBurgers(); changed(true);
+            } }, 'Cambiar foto'),
+            sf.image ? h('button', { class: 'link', onclick: () => { sf.image = null; drawBurgers(); changed(true); } }, 'Volver a la foto original') : null,
+            h('small', {}, 'Para que se note que todas las burgers vienen con papas.'))),
+        field('Etiqueta sobre las papas', textInput(sf, 'label', { upper: true }), 'Ej: + PAPAS, CON PAPAS. Déjala vacía para mostrar solo la foto.'));
+    }
+    return h('div', { class: 'side-fries' }, ...parts);
+  }
+
   function drawBurgers() {
     const box = $('#burgers'); box.innerHTML = '';
-    box.append(sectionHead(project.brand, 'title', 'note', 'Ej: BURGERS, SMASH BURGERS', 'Ej: TODAS LLEVAN PAPAS FRITAS'));
+    box.append(sectionHead(project.brand, 'title', 'note', 'Ej: BURGERS, SMASH BURGERS', 'Ej: TODAS LLEVAN PAPAS FRITAS'), sideFriesBox());
     project.burgers.forEach((b, i) => box.append(burgerCard(b, i)));
     box.append(h('button', { class: 'btn wide', disabled: project.burgers.length >= 6, onclick: () => {
       project.burgers.push({ uid: uid(), name: 'NUEVA BURGER', icon: 'burger', ingredients: '', prices: [{ label: 'SIMPLE', price: '' }, { label: 'DOBLE', price: '' }], badge: 1, note: '', big: false });

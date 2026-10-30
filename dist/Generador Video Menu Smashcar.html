@@ -45,6 +45,29 @@ input:focus,textarea:focus,select:focus{outline:2px solid var(--yel);outline-off
 .sa-row input{accent-color:var(--yel);width:100%}
 .sa-val{font-variant-numeric:tabular-nums;color:var(--muted);text-align:right}
 .safe-area .link:disabled{color:var(--muted);opacity:.5;cursor:default}
+.restu-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end}
+.restu-row .field{margin:0}
+.slug{display:flex;align-items:center;background:#0f0c0a;border:1px solid var(--line);border-radius:8px;padding-left:10px}
+.slug span{color:var(--muted);white-space:nowrap}
+.slug input{border:0;background:transparent;padding-left:2px}
+.btn.primary.small{font-size:16px;padding:9px 16px}
+#restuMsg.err{color:#ff8a7a}
+.report{border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:8px 0;background:#120f0c}
+.report strong{display:block;font-size:13px;margin-bottom:4px}
+.report.ok{border-color:#3d6b34}.report.ok strong{color:#9be08a}
+.report.warn{border-color:#7a5a1c}.report.warn strong{color:var(--yel)}
+.report ul{margin:0;padding-left:18px;font-size:13px}
+.report li{margin:2px 0}
+.report small{display:block;color:var(--muted);font-size:12px;margin-top:4px}
+.price-row .restu-link{grid-column:1/-1;font-size:12px;padding:5px 8px;color:var(--muted)}
+.price-row.linked input:nth-child(2){border-color:#3d6b34}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip-check{display:flex;align-items:center;gap:6px;background:#0f0c0a;border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:12px;cursor:pointer}
+.chip-check input{accent-color:var(--yel);margin:0}
+.title-tag{display:flex;align-items:center;gap:8px;min-width:0}
+.tag{font:11px Roboto,system-ui,sans-serif;font-weight:700;letter-spacing:.5px;border-radius:4px;padding:2px 6px;background:var(--panel2);color:var(--muted);border:1px solid var(--line)}
+.tag.restu{color:#ffb27a;border-color:#7a4a25}
+.card.off{opacity:.55}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
 .check{display:flex;gap:9px;align-items:center;margin:7px 0;cursor:pointer}
@@ -121,8 +144,10 @@ input:focus,textarea:focus,select:focus{outline:2px solid var(--yel);outline-off
       <p class="muted" id="formatInfo"></p>
       <div class="field safe-area" id="safeArea"></div>
     </div></details>
+    <details open><summary>Restu <em>precios automáticos</em></summary><div class="inner" id="restu"></div></details>
     <details open><summary>Burgers <em id="burgersSum"></em><small id="burgersCount"></small></summary><div class="inner" id="burgers"></div></details>
     <details open><summary>Extras <em id="extrasSum"></em><small id="extrasCount"></small></summary><div class="inner" id="extras"></div></details>
+    <details open><summary>Promociones y combos <small id="promosCount"></small></summary><div class="inner" id="promos"></div></details>
     <details open><summary>Tiempos</summary><div class="inner" id="times"></div></details>
     <details><summary>Marca y contacto</summary><div class="inner" id="brand"></div></details>
     <details><summary>Efectos</summary><div class="inner" id="effects"></div></details>
@@ -2499,10 +2524,12 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
     img(src) { return src ? this.cached('img:' + src, () => loadImage(src)) : Promise.resolve(null); }
 
     timeline() {
-      const d = this.p.durations, n = Math.max(1, this.p.burgers.length);
+      const d = this.p.durations, n = Math.max(1, this.p.burgers.length), m = this.nPromo || 0;
       const I = clamp(+d.intro || 4.5, 3, 10), B = clamp(+d.burger || 12, 1, 30), G = clamp(+d.grid || 7.5, 5, 20);
-      const T_SPOT = I, T_GRID = I + n * B, L = T_GRID + G;
-      return { I, B, G, n, T_SPOT, T_GRID, L };
+      const P = clamp(+d.promo || 6, 3, 15);
+      // intro → escenas de promos → menú (con foco en cada burger) → menú sin destacar
+      const T_PROMO = I, T_SPOT = I + m * P, T_GRID = T_SPOT + n * B, L = T_GRID + G;
+      return { I, B, G, P, m, n, T_PROMO, T_SPOT, T_GRID, L };
     }
     get duration() { return this.p ? this.timeline().L : 60; }
     get frames() { return Math.round(this.duration * FPS); }
@@ -2517,6 +2544,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
         layout: ex.layout === 'right' ? 'right' : 'bottom',
         items: (Array.isArray(ex.items) ? ex.items : []).filter(d => d && d.name && d.price).slice(0, 6),
       };
+      const extrasAll = Array.isArray(ex.items) ? ex.items : [];
       const vertical = p.orientation === 'vertical';
       const layout = vertical ? layoutVertical(p.burgers.length, p.extras.items.length, !!p.extras.note)
         : layoutHorizontal(p.burgers.length, p.extras.items.length, p.extras.layout);
@@ -2649,7 +2677,13 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
           price: text(formatPrice(d.price), `64px ${ANTON}`, YEL),
         });
       }
-      this.S = S; this.p = p; this.layout = layout; this.geom = geom; this.ready = true;
+      S.promos = [];
+      const promoList = (p.promos && Array.isArray(p.promos.items) ? p.promos.items : [])
+        .filter(x => x && x.enabled !== false && String(x.title || '').trim()).slice(0, 6);
+      for (const pr of promoList) S.promos.push(await this.promoSprites(pr, p, img, extrasAll, vertical));
+      S.promoScenes = S.promos.filter(x => x.display !== 'band');
+      S.promoBand = S.promos.filter(x => x.display !== 'scene');
+      this.S = S; this.p = p; this.layout = layout; this.geom = geom; this.nPromo = S.promoScenes.length; this.ready = true;
       return this;
     }
 
@@ -2981,10 +3015,10 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       }
     }
 
-    verticalHeader(ctx, alpha = 1) {
+    verticalHeader(ctx, alpha = 1, narrow = false) {
       const S = this.S;
       draw(ctx, S.logo_v, 132, 106, { a: alpha });
-      drawFit(ctx, S.name_v, 222, 106, 800, 84, { anchor: 'l', a: alpha });
+      drawFit(ctx, S.name_v, 222, 106, narrow ? 360 : 800, 84, { anchor: 'l', a: alpha });
       ctx.save(); ctx.globalAlpha = alpha;
       ctx.fillStyle = 'rgba(245,184,46,0.55)'; ctx.fillRect(64, 187, 952, 2);
       ctx.restore();
@@ -3253,8 +3287,9 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
     }
 
     menuVertical(ctx, t, tl) {
-      const S = this.S;
-      this.verticalHeader(ctx);
+      const S = this.S, band = S.promoBand.length > 0;
+      this.verticalHeader(ctx, 1, band);
+      if (band) this.promoBand(ctx, t, tl, { x: 600, y: 28, w: 416, h: 150 });
       drawFit(ctx, S.title_v, 540, 258, 930, 116);
       drawFit(ctx, S.combo_v, 540, 350, 920, 76);
       this.menuCards(ctx, t, tl);
@@ -3265,17 +3300,193 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       const S = this.S;
       draw(ctx, S.logo_sm, 93, 73);
       drawFit(ctx, S.name_sm, 160, 73, 530, 82, { anchor: 'l' });
-      drawFit(ctx, S.menuTitle, 960, 82, 650, 105);
-      drawFit(ctx, S.menuNote, 960, 158, 1100, 54);
+      const band = S.promoBand.length > 0;
+      drawFit(ctx, S.menuTitle, 960, 82, band ? 620 : 650, 105);
+      drawFit(ctx, S.menuNote, 960, 158, band ? 620 : 1100, 54);
+      if (band) this.promoBand(ctx, t, tl, { x: 1300, y: 20, w: 572, h: 160 });
       ctx.fillStyle = 'rgba(245,184,46,0.58)'; ctx.fillRect(48, 193, 1824, 2);
       this.menuCards(ctx, t, tl);
       if (this.layout.extras) this.menuExtras(ctx, this.layout.extras);
     }
 
+    // ------------------------------------------------------------ promociones
+    // Foto del combo: las burgers al centro y los extras a los lados, apoyados en la misma base.
+    composeArt(parts) {
+      const H0 = 520, main = parts[0];
+      const ms = Math.min(H0 / main.spr.height, 760 / main.spr.width);
+      const mw = main.spr.width * ms, mh = main.spr.height * ms;
+      let right = mw / 2, left = mw / 2;
+      const side = parts.slice(1).map((q, i) => {
+        const s = Math.min(H0 * (q.burger ? 0.8 : 0.6) / q.spr.height, H0 * (q.burger ? 0.9 : 0.78) / q.spr.width);
+        const w = q.spr.width * s, h = q.spr.height * s, overlap = w * 0.32, onRight = i % 2 === 0;
+        const cx = onRight ? right + w / 2 - overlap : -(left + w / 2 - overlap);
+        if (onRight) right += w - overlap; else left += w - overlap;
+        return { spr: q.spr, w, h, cx };
+      });
+      const Hc = Math.max(mh, ...side.map(q => q.h)) + 30, c = canvas(left + right + 40, Hc), x = ctx2d(c);
+      const ox = left + 20, base = Hc - 10;
+      for (const q of [...side].reverse()) x.drawImage(q.spr, ox + q.cx - q.w / 2, base - 8 - q.h, q.w, q.h);
+      x.drawImage(main.spr, ox - mw / 2, base - mh, mw, mh);
+      return shadowed(c, { off: 8, blur: 12, op: 0.55 });
+    }
+
+    async promoArt(pr, p, img, extrasAll) {
+      if (pr.image) {
+        const raw = await this.img(pr.image);
+        const art = raw ? await this.cached('promo:' + pr.image.length + ':' + pr.image.slice(-80), () => fitH(removeFlatBackground(raw).canvas, 620, 1100)) : null;
+        return art ? { art, main: art } : null;
+      }
+      const parts = [];
+      for (const uid of pr.shows || []) {
+        const b = p.burgers.find(q => q.uid === uid);
+        if (b) {
+          const pic = b.image ? await this.img(b.image) : (b.defaultImage ? img[b.defaultImage] : img.logoBrand);
+          const key = b.image ? b.image.length + ':' + b.image.slice(-80) : (b.defaultImage || 'logo');
+          const spr = pic ? await this.cached(`bun:${key}:520`, () => burgerByBun(pic, 520)) : null;
+          if (spr) parts.push({ burger: true, spr });
+          continue;
+        }
+        const e = extrasAll.find(q => q && q.uid === uid);
+        if (!e) continue;
+        const raw = e.image ? await this.img(e.image) : e.defaultImage ? img[e.defaultImage] : null;
+        const key = e.image ? e.image.length + ':' + e.image.slice(-80) : 'def:' + e.defaultImage;
+        if (raw) parts.push({ burger: false, spr: await this.cached('extra:' + key, () => fitH(removeFlatBackground(raw).canvas, 360, 900)) });
+      }
+      return parts.length ? { art: this.composeArt(parts), main: parts[0].spr } : null;
+    }
+
+    async promoSprites(pr, p, img, extrasAll, vertical) {
+      const up = s => String(s || '').toUpperCase().trim(), num = s => Number(String(s || '').replace(/[^\d]/g, '')) || 0;
+      const title = up(pr.title), badge = up(pr.badge), price = formatPrice(up(pr.price)), regular = formatPrice(up(pr.regular));
+      const P = { name: title, display: ['scene', 'band', 'both'].includes(pr.display) ? pr.display : 'scene' };
+      const pics = await this.promoArt(pr, p, img, extrasAll);
+      P.art = pics ? pics.art : null;
+      P.bandArt = pics ? pics.main : null;
+      const align = vertical ? 'center' : 'left', tw = vertical ? 940 : 860;
+      P.tag = badge ? text(badge, `46px ${ANTON}`, DARK, { shadow: false }) : null;
+      P.title = paraSprite(title, `${vertical ? 112 : 118}px ${ANTON}`, YEL, tw, vertical ? 112 : 118, { align, maxLines: 2 });
+      P.sub = up(pr.subtitle) ? paraSprite(up(pr.subtitle), `52px ${BEBAS}`, WHITE, tw, 56, { align, maxLines: 2 }) : null;
+      P.when = up(pr.when) ? paraSprite(up(pr.when), `44px ${BEBAS}`, YEL, tw, 48, { align, maxLines: 2 }) : null;
+      const money = /^\$/.test(price);
+      if (price) {
+        P.burstLab = money ? text('SOLO', `40px ${ANTON}`, DARK, { shadow: false }) : null;
+        P.burstPr = text(price, money ? `${price.length < 7 ? 76 : price.length < 9 ? 68 : 56}px ${ANTON}` : `112px ${ANTON}`, DARK, { shadow: false });
+        P.burstSc = Math.min(1, (money ? 280 : 260) / P.burstPr.width);
+      }
+      if (money && num(regular) > num(price)) {
+        P.save = textSprite([{ text: 'AHORRAS', font: `44px ${BEBAS}`, color: WHITE }, { text: formatPrice(String(num(regular) - num(price))), font: `62px ${ANTON}`, color: YEL }], { gap: 16, shadow: false });
+        P.before = text('ANTES ' + regular, `42px ${BEBAS}`, 'rgba(255,255,255,0.72)', { shadow: false });
+      }
+      P.bandTag = badge ? text(badge, `30px ${ANTON}`, DARK, { shadow: false }) : null;
+      P.bandTitle = text(title, `56px ${ANTON}`, WHITE);
+      P.bandPrice = price ? text(price, `64px ${ANTON}`, YEL) : null;
+      return P;
+    }
+
+    // Etiqueta amarilla (COMBO, PROMO…) con el texto oscuro encima.
+    tagPill(ctx, spr, x, y, a, anchor = 'l', pad = 18) {
+      if (!spr || a <= 0.003) return;
+      const w = spr.width + pad * 2, h = spr.height + pad * 0.7, left = anchor === 'l' ? x : x - w / 2;
+      ctx.save(); ctx.globalAlpha = Math.min(1, a);
+      ctx.fillStyle = YEL; ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 4;
+      ctx.beginPath(); ctx.roundRect(left, y - h / 2, w, h, h / 2); ctx.fill();
+      ctx.restore();
+      draw(ctx, spr, left + w / 2, y, { a });
+    }
+
+    promoScene(ctx, t, tl) {
+      const ts = t - tl.T_PROMO, k = Math.min(tl.m - 1, Math.floor(ts / tl.P)), tau = ts - k * tl.P;
+      const P = this.S.promoScenes[k];
+      if (!P) return;
+      const V = this.vertical, D = tl.P, op = 1 - eInOut(prog(tau, D - 0.55, D - 0.05));
+      if (V) this.verticalHeader(ctx, op);
+      const L = V
+        ? { x: 540, top: 225, art: [540, 1340, 990, 680], burst: [300, 1548], save: [730, 1548] }
+        : { x: 110, top: 205, art: [1360, 905, 960, 660], burst: [330, 770], save: [560, 770] };
+      // foto: cae con rebote, con brillo, rayos y vapor detrás
+      const [ax, ab, aw, ah] = L.art, art = P.art;
+      const sc = art ? Math.min(1, aw / art.width, ah / art.height) : 1, h = art ? art.height * sc : 300, w = art ? art.width * sc : 500;
+      const gin = eOut(prog(tau, 0.4, 1.0)) * op;
+      if (this.p.effects.rays && gin > 0) {
+        ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.14 * gin;
+        ctx.translate(ax, ab - h / 2); ctx.rotate(t * 8 * Math.PI / 180);
+        ctx.drawImage(this.fx.rays, -900, -900, 1800, 1800); ctx.restore();
+      }
+      this.glow(ctx, ax, ab - h / 2, w * 1.4, h * 1.5, 0.7 * gin);
+      this.steam(ctx, t, ax, ab - h, Math.min(w, 520) * 0.6, 0.55 * eOut(prog(tau, 0.7, 1.6)) * op, { seed: 'promo' + k, n: 14, rise: 300, size: [50, 190] });
+      this.dropBurger(ctx, art, ax, ab, tau, t, { op, sc });
+      this.impactPuffs(ctx, tau, ax, ab, w * 0.8, 0.55, 20 + k);
+      // textos
+      const ut = eOut(prog(tau, 0.1, 0.5)) * op;
+      let y = L.top;
+      if (P.tag) { this.tagPill(ctx, P.tag, V ? L.x : L.x + (1 - ut) * -200, y, ut, V ? 'c' : 'l'); y += 50; }
+      const ui = eBack(prog(tau, 0.2, 0.75), 1.4), ua = clamp(ui * 1.5) * op;
+      const block = (spr, a, dy = 0) => {
+        if (!spr) return;
+        const s = Math.min(1, (V ? 980 : 900) / spr.width);
+        draw(ctx, spr, V ? L.x : L.x - 20 * s, y - 14 + dy, { anchor: V ? 'tc' : 'tl', a, sx: s });
+        y += (spr.height - 34) * s;
+      };
+      block(P.title, ua, (1 - ui) * 40);
+      block(P.sub, eOut(prog(tau, 0.45, 0.95)) * op);
+      y += 6;
+      block(P.when, eOut(prog(tau, 0.6, 1.1)) * op);
+      // precio en la estrella y el ahorro al lado
+      const ub = prog(tau, 0.9, 1.5);
+      if (ub > 0 && P.burstPr) {
+        const s = eElastic(ub) * (1 + 0.045 * Math.sin(2 * Math.PI * t * 1.1)) * (1 - 0.5 * (1 - op)) * (V ? 1.05 : 1);
+        const [bx, by] = L.burst;
+        draw(ctx, this.S.burst, bx, by, { a: op, sx: s, rot: t * 14 });
+        if (P.burstLab) draw(ctx, P.burstLab, bx, by - 46 * s, { a: op, sx: s });
+        draw(ctx, P.burstPr, bx, by + (P.burstLab ? 18 : 6) * s, { a: op, sx: s * P.burstSc });
+        this.ring(ctx, bx, by, prog(tau, 0.95, 1.6), 260, 0.6);
+      }
+      const us = eBack(prog(tau, 1.2, 1.7), 1.6);
+      if (us > 0 && P.save) {
+        const [sx, sy] = L.save, a = clamp(us) * op, x0 = sx + (1 - us) * 300;
+        const pw = P.save.width + 44, ph = P.save.height + 26;
+        ctx.save(); ctx.globalAlpha = a;
+        ctx.fillStyle = 'rgba(12,10,8,0.92)'; ctx.strokeStyle = RED; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.roundRect(x0, sy - 30 - ph / 2, pw, ph, ph / 2); ctx.fill(); ctx.stroke();
+        ctx.restore();
+        draw(ctx, P.save, x0 + pw / 2, sy - 30, { a });
+        if (P.before) {
+          draw(ctx, P.before, x0 + pw / 2, sy + 42, { a });
+          ctx.save(); ctx.globalAlpha = a * 0.9; ctx.strokeStyle = RED; ctx.lineWidth = 4;
+          const bw = P.before.width - 6;
+          ctx.beginPath(); ctx.moveTo(x0 + pw / 2 - bw / 2, sy + 44); ctx.lineTo(x0 + pw / 2 + bw / 2, sy + 40); ctx.stroke();
+          ctx.restore();
+        }
+      }
+    }
+
+    // Recuadro de promos dentro de la pantalla del menú; si hay varias, van rotando.
+    promoBand(ctx, t, tl, r) {
+      const list = this.S.promoBand, n = list.length;
+      if (!n) return;
+      const per = 4.5, ts = Math.max(0, t - tl.T_SPOT), k = Math.floor(ts / per) % n, tau = ts % per;
+      const a = n > 1 ? eOut(prog(tau, 0, 0.4)) * (1 - eInOut(prog(tau, per - 0.4, per))) : 1;
+      const P = list[k], pulse = 0.5 + 0.5 * Math.sin(t * 3);
+      ctx.save();
+      const g = ctx.createLinearGradient(r.x, r.y, r.x + r.w, r.y + r.h);
+      g.addColorStop(0, 'rgba(60,34,12,0.95)'); g.addColorStop(1, 'rgba(16,11,8,0.95)');
+      ctx.fillStyle = g; ctx.strokeStyle = `rgba(245,184,46,${0.6 + 0.3 * pulse})`; ctx.lineWidth = 3;
+      ctx.shadowColor = 'rgba(245,184,46,0.35)'; ctx.shadowBlur = 18 + 10 * pulse;
+      ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 20); ctx.fill(); ctx.stroke();
+      ctx.restore();
+      const artW = P.bandArt ? Math.min(r.w * 0.34, 170) : 0;
+      if (P.bandArt) drawFit(ctx, P.bandArt, r.x + 14 + artW / 2, r.y + r.h / 2 + 2, artW, r.h - 22, { a });
+      const tx = r.x + (P.bandArt ? artW + 26 : 22), tw = r.x + r.w - 16 - tx;
+      if (P.bandTag) this.tagPill(ctx, P.bandTag, tx, r.y + 27, a, 'l', 12);
+      drawFit(ctx, P.bandTitle, tx - 14, r.y + (P.bandTag ? 76 : 58), tw + 28, 62, { anchor: 'l', a });
+      if (P.bandPrice) drawFit(ctx, P.bandPrice, tx - 14, r.y + r.h - 36, tw + 28, 72, { anchor: 'l', a });
+    }
+
     renderVertical(ctx, t, tl) {
       ctx.drawImage(this.S.bg, 0, 0);
       this.fire(ctx, t);
-      if (t < tl.T_SPOT) this.introVertical(ctx, t, tl);
+      if (t < tl.I) this.introVertical(ctx, t, tl);
+      else if (t < tl.T_SPOT) this.promoScene(ctx, t, tl);
       else this.menuVertical(ctx, t, tl);
       ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
       ctx.drawImage(this.S.bar_v, 0, PORTRAIT_H - 142);
@@ -3325,7 +3536,8 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
       }
       ctx.drawImage(this.S.bg, 0, 0);
       this.fire(ctx, t);
-      if (t < tl.T_SPOT) this.intro(ctx, t, tl);
+      if (t < tl.I) this.intro(ctx, t, tl);
+      else if (t < tl.T_SPOT) this.promoScene(ctx, t, tl);
       else this.menuHorizontal(ctx, t, tl);
       ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
       ctx.drawImage(this.S.bar, 0, H - 100);
@@ -3339,6 +3551,7 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
 
     sceneStarts() {
       const tl = this.timeline(), s = [{ name: 'Intro', t: 0 }];
+      this.S.promoScenes.forEach((P, k) => s.push({ name: 'Promo: ' + P.name, t: tl.T_PROMO + k * tl.P + 0.01 }));
       for (let i = 0; i < tl.n; i++) s.push({ name: this.p.burgers[i].name || `Burger ${i + 1}`, t: tl.T_SPOT + i * tl.B + 0.01 });
       s.push({ name: 'Menú completo', t: tl.T_GRID + 0.01 });
       return s;
@@ -3475,6 +3688,298 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
   global.SmashExporter = { exportVideo, encodeLoop, writeMp4 };
 })(window);
 </script>
+<script>/* Conexión con Restu: lee la carta pública del local (precios, fotos y promociones)
+   y la cruza con las tarjetas del video para actualizar precios sin escribirlos a mano. */
+(function (global) {
+  'use strict';
+  const { formatPrice } = global.SmashEngine;
+  const API = 'https://wmzialokmozyxdfpspha.supabase.co';
+  // Clave pública ("anon") de Restu: es la misma que usa la carta online y solo lee lo público.
+  const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndtemlhbG9rbW96eXhkZnBzcGhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4MTAwNjMsImV4cCI6MjA5NDM4NjA2M30.abLTsTZNGRuQrWqXTyVdOIcXoR3xlywTs33Q_BeJvOo';
+
+  async function fetchStorefront(slug) {
+    let r;
+    try {
+      r = await fetch(`${API}/rest/v1/rpc/get_public_storefront`, {
+        method: 'POST',
+        headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ _slug: slug }),
+      });
+    } catch (e) { throw new Error('No hay conexión con Restu. Revisa el internet e intenta de nuevo.'); }
+    if (!r.ok) throw new Error(`Restu respondió con un error (${r.status}).`);
+    const d = await r.json();
+    if (!d || !d.org || !Array.isArray(d.items)) throw new Error(`No se encontró el local "${slug}" en Restu.`);
+    return d;
+  }
+
+  // ------------------------------------------------------------ nombres
+  const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase()
+    .replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const VARIANT = /\s(SIMPLE|DOBLE|TRIPLE)$/;
+  const NOISE = /\b(BURGER|BURGUER|HAMBURGUESA|HAMBURGER|\d+ ?(CC|ML|LT|L))\b/g;
+  function splitVariant(name) {
+    const n = norm(name), m = n.match(VARIANT);
+    return m ? { base: n.slice(0, -m[0].length).trim(), variant: m[1] } : { base: n, variant: '' };
+  }
+  function bigrams(s) {
+    const b = [];
+    for (let i = 0; i < s.length - 1; i++) b.push(s.slice(i, i + 2));
+    return b;
+  }
+  function dice(a, b) {
+    if (!a || !b) return 0;
+    if (a === b) return 1;
+    const A = bigrams(a), B = bigrams(b);
+    if (!A.length || !B.length) return 0;
+    const pool = [...B];
+    let hit = 0;
+    for (const x of A) { const i = pool.indexOf(x); if (i >= 0) { hit++; pool.splice(i, 1); } }
+    return 2 * hit / (A.length + B.length);
+  }
+  // Parecido entre dos nombres (0 a 1): compara el nombre entero y palabra por palabra.
+  function similarity(a, b) {
+    const x = norm(a).replace(NOISE, ' ').replace(/\s+/g, ' ').trim(), y = norm(b).replace(NOISE, ' ').replace(/\s+/g, ' ').trim();
+    let best = dice(x.replace(/ /g, ''), y.replace(/ /g, ''));
+    for (const p of x.split(' ')) for (const q of y.split(' ')) if (p.length > 3 && q.length > 3) best = Math.max(best, dice(p, q) * 0.9);
+    return best;
+  }
+  const pretty = name => norm(name).replace(/\b\d+ ?(CC|ML)\b/g, '').replace(/\s+/g, ' ').trim();
+
+  // ------------------------------------------------------------ catálogo
+  function effectivePrice(it, now = Date.now()) {
+    const base = Number(it.price) || 0, disc = Number(it.discount_price);
+    const until = it.discount_until ? Date.parse(it.discount_until) : null;
+    return disc > 0 && disc < base && (until === null || until > now) ? disc : base;
+  }
+  // Lo justo de la carta para vincular y actualizar; se guarda en el proyecto para usarlo sin internet.
+  function catalogFrom(d) {
+    const cats = new Map((d.categories || []).map(c => [c.slug, c]));
+    const burgerCat = (d.categories || []).find(c => /burger|hamburg/i.test(c.slug + ' ' + c.name_es));
+    const items = d.items.map(it => {
+      const c = cats.get(it.category);
+      return {
+        id: it.id, name: String(it.name_es || '').trim(), price: effectivePrice(it), regular: Number(it.price) || 0,
+        category: it.category || '', categoryName: c ? c.name_es : (it.category || 'Otros'),
+        burger: !!burgerCat && it.category === burgerCat.slug,
+        image: it.image_url || null, description: String(it.description_es || '').trim(),
+        order: c ? c.sort_order : 999,
+      };
+    }).sort((a, b) => a.order - b.order);
+    return { slug: d.org.slug, name: d.org.name, fetchedAt: new Date().toISOString(), items };
+  }
+  const byId = catalog => new Map(catalog.items.map(it => [it.id, it]));
+
+  // Variantes de una misma burger juntas: "CLASSIC BURGER SIMPLE" y "… DOBLE" → "CLASSIC BURGER".
+  function burgerGroups(catalog) {
+    const groups = new Map();
+    for (const it of catalog.items.filter(i => i.burger)) {
+      const { base, variant } = splitVariant(it.name);
+      if (!groups.has(base)) groups.set(base, { base, items: [] });
+      groups.get(base).items.push({ ...it, variant });
+    }
+    for (const g of groups.values()) g.items.sort((a, b) => a.price - b.price);
+    return [...groups.values()];
+  }
+
+  // Precio a mostrar para un grupo de productos: igual para todos o "DESDE" el más barato.
+  function priceFor(items) {
+    const ps = items.map(i => i.price).filter(p => p > 0);
+    if (!ps.length) return '';
+    const min = Math.min(...ps), max = Math.max(...ps);
+    return (max > min ? 'DESDE ' : '') + formatPrice(String(min));
+  }
+
+  // ------------------------------------------------------------ vínculos
+  // Sugiere vínculos solo donde nunca se eligió nada (undefined); "Sin vincular" (null / []) se respeta.
+  function autoLink(project, catalog) {
+    const groups = burgerGroups(catalog), used = new Set();
+    for (const b of project.burgers) for (const q of b.prices) if (q.restuId) used.add(q.restuId);
+    for (const b of project.burgers) {
+      if (!b.prices.some(q => q.restuId === undefined)) continue;
+      let best = null, score = 0.45;
+      // también cuenta el nombre de la línea de precio (ej. "QUADRA" ↔ "QUADRA BURGER")
+      const labels = b.prices.map(q => norm(q.label)).filter(l => l && !/^(SIMPLE|DOBLE|TRIPLE)$/.test(l));
+      for (const g of groups) {
+        if (g.items.every(i => used.has(i.id))) continue;
+        const s = Math.max(similarity(b.name, g.base), ...labels.map(l => similarity(l, g.base)));
+        if (s > score) { best = g; score = s; }
+      }
+      b.prices.forEach((q, j) => {
+        if (q.restuId !== undefined) return;
+        if (!best) return;
+        const free = best.items.filter(i => !used.has(i.id));
+        const label = norm(q.label);
+        const pick = free.find(i => i.variant && i.variant === label)
+          || (b.prices.length === 1 && free.length === 1 ? free[0] : null)
+          || (b.prices.length === best.items.length ? best.items[j] : null);
+        if (pick && !used.has(pick.id)) { q.restuId = pick.id; used.add(pick.id); }
+      });
+    }
+    const others = catalog.items.filter(i => !i.burger);
+    for (const x of project.extras.items) {
+      if (x.restuIds !== undefined) continue;
+      const n = norm(x.name);
+      let ids = [];
+      if (/\bBEBIDA/.test(n)) {
+        // "BEBIDAS" agrupa todas las bebidas menos el agua (que suele ir aparte)
+        const drinks = others.filter(i => /drink|bebida/i.test(i.category + ' ' + i.categoryName) && !/\bAGUA\b/.test(norm(i.name)));
+        ids = drinks.map(i => i.id);
+      } else {
+        let best = null, score = 0.45;
+        for (const i of others) { const s = similarity(x.name, i.name); if (s > score) { best = i; score = s; } }
+        if (best) ids = [best.id];
+      }
+      if (ids.length) x.restuIds = ids;
+    }
+  }
+
+  // Pone los precios de Restu en lo vinculado. Devuelve lo que cambió y lo que ya no existe.
+  function applyPrices(project, catalog) {
+    const map = byId(catalog), changes = [], missing = [];
+    for (const b of project.burgers) for (const q of b.prices) {
+      if (!q.restuId) continue;
+      const it = map.get(q.restuId);
+      const where = `${b.name}${q.label ? ' ' + q.label : ''}`;
+      if (!it) { missing.push(where); continue; }
+      const price = formatPrice(String(it.price));
+      if (price !== q.price) { changes.push({ where, from: q.price, to: price }); q.price = price; }
+    }
+    for (const x of project.extras.items) {
+      if (!Array.isArray(x.restuIds) || !x.restuIds.length) continue;
+      const found = x.restuIds.map(id => map.get(id)).filter(Boolean);
+      if (!found.length) { missing.push(x.name); continue; }
+      const price = priceFor(found);
+      if (price && price !== x.price) { changes.push({ where: x.name, from: x.price, to: price }); x.price = price; }
+    }
+    return { changes, missing };
+  }
+
+  // Productos de Restu que no aparecen en ninguna tarjeta del video.
+  function unlinked(project, catalog) {
+    const linked = new Set();
+    for (const b of project.burgers) for (const q of b.prices) if (q.restuId) linked.add(q.restuId);
+    for (const x of project.extras.items) for (const id of x.restuIds || []) linked.add(id);
+    const burgers = burgerGroups(catalog).filter(g => g.items.every(i => !linked.has(i.id)));
+    const extras = catalog.items.filter(i => !i.burger && !linked.has(i.id));
+    return { burgers, extras };
+  }
+
+  function burgerFromGroup(g) {
+    const first = g.items[0];
+    return {
+      name: g.base,
+      icon: 'burger',
+      ingredients: norm(first.description).length > 0 ? first.description.toUpperCase() : '',
+      prices: g.items.slice(0, 2).map(i => ({ label: i.variant, price: formatPrice(String(i.price)), restuId: i.id })),
+      badge: Math.min(1, g.items.length - 1),
+      note: '', big: false,
+      imageUrl: first.image,
+    };
+  }
+  function extraFromItem(i) {
+    return { name: pretty(i.name), price: formatPrice(String(i.price)), image: null, defaultImage: null, restuIds: [i.id], imageUrl: i.image };
+  }
+
+  // ------------------------------------------------------------ promociones
+  const DAYS = ['DOMINGO', 'LUNES', 'MARTES', 'MIÉRCOLES', 'JUEVES', 'VIERNES', 'SÁBADO'];
+  function whenText(p) {
+    const parts = [];
+    const days = Array.isArray(p.days) ? [...p.days].sort() : null;
+    if (days && days.length && days.length < 7) {
+      const names = days.map(d => DAYS[d]);
+      parts.push('SOLO ' + (names.length > 1 ? names.slice(0, -1).join(', ') + ' Y ' + names[names.length - 1] : names[0]));
+    }
+    if (p.time_from && p.time_to) parts.push(`DE ${p.time_from} A ${p.time_to}`);
+    if (p.ends_at) {
+      const d = new Date(p.ends_at);
+      parts.push(`HASTA EL ${d.getDate()}/${d.getMonth() + 1}`);
+    }
+    return parts.join(' · ');
+  }
+  function priceText(p) {
+    switch (p.kind) {
+      case 'bundle_price': return formatPrice(String(p.bundle_price));
+      case 'buy_x_pay_y': return `${p.buy_qty}x${p.pay_qty}`;
+      case 'percent': return `-${p.percent}%`;
+      case 'amount': return '-' + formatPrice(String(p.amount));
+      default: return '';
+    }
+  }
+  const BADGE = { bundle_price: 'COMBO', buy_x_pay_y: 'PROMO', percent: 'DESCUENTO', amount: 'DESCUENTO' };
+
+  // Precio normal de un combo: lo que costaría por separado (para el sello "AHORRAS").
+  // Igual que la caja de Restu, para una categoría se toma el producto más caro.
+  function regularOf(p, catalog) {
+    if (p.kind !== 'bundle_price' || !Array.isArray(p.targets) || !p.targets.length) return '';
+    const map = byId(catalog);
+    let sum = 0;
+    for (const t of p.targets) {
+      if (t.menu_item_id) { const it = map.get(t.menu_item_id); if (!it) return ''; sum += it.regular * (t.qty || 1); }
+      else {
+        const inCat = catalog.items.filter(i => i.category === t.category);
+        if (!inCat.length) return '';
+        sum += Math.max(...inCat.map(i => i.regular)) * (t.qty || 1);
+      }
+    }
+    return sum > (Number(p.bundle_price) || 0) ? formatPrice(String(sum)) : '';
+  }
+
+  // Qué fotos del video representan lo que incluye la promo.
+  function promoShows(p, project, catalog) {
+    const refs = [];
+    const add = uid => { if (uid && !refs.includes(uid)) refs.push(uid); };
+    const map = byId(catalog);
+    for (const t of p.targets || []) {
+      if (t.menu_item_id) {
+        const b = project.burgers.find(b => b.prices.some(q => q.restuId === t.menu_item_id));
+        const x = project.extras.items.find(x => (x.restuIds || []).includes(t.menu_item_id));
+        add(b ? b.uid : x ? x.uid : null);
+      } else {
+        const ids = catalog.items.filter(i => i.category === t.category).map(i => i.id);
+        const x = project.extras.items.find(x => (x.restuIds || []).some(id => ids.includes(id)));
+        const b = !x && project.burgers.find(b => b.prices.some(q => ids.includes(q.restuId)));
+        add(x ? x.uid : b ? b.uid : null);
+      }
+    }
+    // "+ papas" en la descripción: si hay una porción de papas en los extras, también se muestra
+    if (/\bPAPA/.test(norm(p.description_es))) {
+      const fries = project.extras.items.find(x => /\bPAPA/.test(norm(x.name)));
+      if (fries) add(fries.uid);
+    }
+    // las burgers primero (van al centro de la foto)
+    const isBurger = uid => project.burgers.some(b => b.uid === uid);
+    return refs.sort((a, b) => isBurger(b) - isBurger(a));
+  }
+
+  // Trae las promos vigentes de Restu: crea las nuevas, actualiza precio/vigencia de las que ya
+  // estaban (respetando lo que se haya editado a mano) y quita las que terminaron.
+  function syncPromos(project, d, catalog, newId) {
+    const live = Array.isArray(d.promotions) ? d.promotions : [];
+    const items = project.promos.items, added = [], ended = [];
+    for (const p of live) {
+      const synced = { price: priceText(p), regular: regularOf(p, catalog), when: whenText(p) };
+      const cur = items.find(x => x.restuId === p.id);
+      if (cur) { Object.assign(cur, synced); continue; }
+      items.push({
+        id: newId(), source: 'restu', restuId: p.id, enabled: true, display: 'scene',
+        badge: BADGE[p.kind] || 'PROMO', title: norm(p.name_es) ? String(p.name_es).toUpperCase() : 'PROMO',
+        subtitle: String(p.description_es || '').toUpperCase(), shows: promoShows(p, project, catalog), image: null,
+        ...synced,
+      });
+      added.push(String(p.name_es || 'Promo'));
+    }
+    const liveIds = new Set(live.map(p => p.id));
+    for (let i = items.length - 1; i >= 0; i--) {
+      if (items[i].source === 'restu' && !liveIds.has(items[i].restuId)) { ended.push(items[i].title); items.splice(i, 1); }
+    }
+    return { added, ended };
+  }
+
+  global.SmashRestu = {
+    fetchStorefront, catalogFrom, autoLink, applyPrices, unlinked, burgerFromGroup, extraFromItem, syncPromos, priceFor, burgerGroups,
+  };
+})(window);
+</script>
 <script>
 if (!window.SMASH_ASSETS || !window.SmashEngine) {
   // La plantilla de src necesita el HTML armado, que incluye fotos y tipografías.
@@ -3502,11 +4007,11 @@ if (!window.SMASH_ASSETS || !window.SmashEngine) {
   };
 
   const DEFAULT = {
-    version: 3,
+    version: 4,
     orientation: 'horizontal',
-    durations: { intro: 4.5, burger: 12, grid: 7.5 },
+    durations: { intro: 4.5, burger: 12, grid: 7.5, promo: 6 },
     exportMinutes: 20,
-    brand: { name: 'SMASHCAR', title: 'BURGERS', note: 'TODAS LAS BURGERS LLEVAN PAPAS FRITAS', phone: '+56 9 9549 9633', web: 'SMASHCAR.CL', logo: null, script: null },
+    brand: { name: 'SMASHCAR', title: 'BURGERS', note: 'TODAS LAS BURGERS LLEVAN PAPAS FRITAS', phone: '+56 9 3083 5991', web: 'SMASHCAR.CL', logo: null, script: null },
     effects: { steam: true, embers: true, fire: true, glow: true, rays: true, shake: true },
     // márgenes en % del cuadro para pantallas con zonas dañadas o tapadas (por orientación)
     safeArea: { horizontal: { top: 0, bottom: 0, left: 0, right: 0 }, vertical: { top: 0, bottom: 0, left: 0, right: 0 } },
@@ -3524,6 +4029,9 @@ if (!window.SMASH_ASSETS || !window.SmashEngine) {
         { name: 'AGUA', price: '$1.300', image: null, defaultImage: 'x_agua' },
       ],
     },
+    // carta en Restu: de ahí salen los precios y las promos (catalog es la última copia descargada)
+    restu: { slug: 'smashcar', catalog: null, lastSync: null },
+    promos: { items: [] },
   };
   const ICONS = [['bolt', 'Rayo'], ['bbq', 'Parrilla'], ['onion', 'Cebolla'], ['mush', 'Champiñón'], ['burger', 'Logo burger'], ['custom', 'Subir imagen…']];
 
@@ -3547,6 +4055,12 @@ if (!window.SMASH_ASSETS || !window.SmashEngine) {
   const view = $('#preview'), vctx = view.getContext('2d', { alpha: false });
 
   const clone = o => JSON.parse(JSON.stringify(o));
+  const uid = () => Math.random().toString(36).slice(2, 10);
+  // Identificador fijo de cada burger y extra: las promos lo usan para saber qué fotos mostrar.
+  function ensureUids(p = project) {
+    for (const b of p.burgers) if (!b.uid) b.uid = uid();
+    for (const x of p.extras.items) if (!x.uid) x.uid = uid();
+  }
   function normalizeProject(saved) {
     const p = Object.assign(clone(DEFAULT), saved || {});
     p.brand = Object.assign(clone(DEFAULT.brand), p.brand);
@@ -3575,7 +4089,14 @@ if (!window.SMASH_ASSETS || !window.SmashEngine) {
       item.defaultImage = def ? def.defaultImage : null;
     }
     delete p.drinks;
+    p.durations = Object.assign(clone(DEFAULT.durations), p.durations);
+    p.restu = Object.assign(clone(DEFAULT.restu), p.restu);
+    p.promos = Object.assign(clone(DEFAULT.promos), p.promos);
+    p.promos.items = Array.isArray(p.promos.items) ? p.promos.items.filter(Boolean) : [];
+    ensureUids(p);
     if (p.brand.note === 'TODOS LOS COMBOS LLEVAN PAPAS FRITAS') p.brand.note = DEFAULT.brand.note;
+    // número antiguo de Smashcar: se cambia por el actual (otros números escritos a mano se respetan)
+    if (String(p.brand.phone || '').replace(/\D/g, '') === '56995499633') p.brand.phone = DEFAULT.brand.phone;
     p.version = DEFAULT.version;
     return p;
   }
@@ -3729,9 +4250,12 @@ if (!window.SMASH_ASSETS || !window.SmashEngine) {
     const I = Math.max(3, Math.min(10, +d.intro || 4.5));
     const B = Math.max(1, Math.min(30, +d.burger || 12));
     const G = Math.max(5, Math.min(20, +d.grid || 7.5));
-    const L = I + n * B + G;
+    const P = Math.max(3, Math.min(15, +d.promo || 6));
+    // igual que el motor: hasta 6 promos activas con título; las "solo en el menú" no suman escena
+    const m = project.promos.items.filter(x => x.enabled !== false && String(x.title || '').trim()).slice(0, 6).filter(x => x.display !== 'band').length;
+    const L = I + m * P + n * B + G;
     const seconds = v => v.toFixed(1).replace('.', ',');
-    $('#loopTotal').textContent = `Inicio ${seconds(I)} s + ${n} destacados × ${seconds(B)} s + cierre ${seconds(G)} s = loop ${seconds(L)} s`;
+    $('#loopTotal').textContent = `Inicio ${seconds(I)} s${m ? ` + ${m} promo${m > 1 ? 's' : ''} × ${seconds(P)} s` : ''} + ${n} destacados × ${seconds(B)} s + cierre ${seconds(G)} s = loop ${seconds(L)} s`;
     const reps = Math.max(1, Math.round(project.exportMinutes * 60 / L));
     $('#exportInfo').textContent = project.exportMinutes > 0
       ? `${reps} vueltas del loop · ${fmtT(reps * L)} · aprox. ${fmtMB(reps * L * 4e6 / 8 * 0.9)}`
@@ -3752,7 +4276,9 @@ if (!window.SMASH_ASSETS || !window.SmashEngine) {
         const pr = textInput(q, 'price', { onblur: el => { const f = formatPrice(el.value); if (f !== el.value) { el.value = f; q.price = f; changed(); } } });
         pr.placeholder = '$7.990';
         const del = h('button', { class: 'icon-btn', title: 'Quitar línea', onclick: () => { b.prices.splice(j, 1); b.badge = Math.min(b.badge, Math.max(0, b.prices.length - 1)); drawPrices(); syncBadge(); changed(); } }, '✕');
-        priceRows.append(h('div', { class: 'price-row' }, lab, pr, b.prices.length > 1 ? del : h('span')));
+        const linked = !!(q.restuId && catalogById(q.restuId));
+        priceRows.append(h('div', { class: 'price-row' + (linked ? ' linked' : '') }, lab, pr, b.prices.length > 1 ? del : h('span'),
+          catalogItems().length ? restuSelect(q, () => { drawPrices(); drawRestu(); }) : null));
       });
       if (b.prices.length < 2) priceRows.append(h('button', { class: 'link', onclick: () => { b.prices.push({ label: 'DOBLE', price: '' }); drawPrices(); syncBadge(); changed(); } }, '+ Agregar precio'));
     }
@@ -3800,7 +4326,7 @@ if (!window.SMASH_ASSETS || !window.SmashEngine) {
     box.append(sectionHead(project.brand, 'title', 'note', 'Ej: BURGERS, SMASH BURGERS', 'Ej: TODAS LLEVAN PAPAS FRITAS'));
     project.burgers.forEach((b, i) => box.append(burgerCard(b, i)));
     box.append(h('button', { class: 'btn wide', disabled: project.burgers.length >= 6, onclick: () => {
-      project.burgers.push({ name: 'NUEVA BURGER', icon: 'burger', ingredients: '', prices: [{ label: 'SIMPLE', price: '' }, { label: 'DOBLE', price: '' }], badge: 1, note: '', big: false });
+      project.burgers.push({ uid: uid(), name: 'NUEVA BURGER', icon: 'burger', ingredients: '', prices: [{ label: 'SIMPLE', price: '' }, { label: 'DOBLE', price: '' }], badge: 1, note: '', big: false });
       drawBurgers(); changed(true);
     } }, project.burgers.length >= 6 ? 'Máximo 6 burgers' : '+ Agregar burger'));
     syncSummaries();
@@ -3813,6 +4339,8 @@ if (!window.SMASH_ASSETS || !window.SmashEngine) {
     $('#extrasSum').textContent = project.extras.title || 'EXTRAS';
     const shown = project.extras.items.filter(d => d.name && d.price).length;
     $('#extrasCount').textContent = shown ? `${shown} en el menú` : 'oculto';
+    const promos = project.promos.items.filter(x => x.enabled !== false && String(x.title || '').trim()).length;
+    $('#promosCount').textContent = promos ? `${promos} activa${promos > 1 ? 's' : ''}` : 'ninguna';
   }
 
   function sectionHead(obj, titleKey, noteKey, titleHint, noteHint) {
@@ -3863,13 +4391,208 @@ if (!window.SMASH_ASSETS || !window.SmashEngine) {
           field('Precio', textInput(item, 'price', {
             after: syncSummaries,
             onblur: el => { const f = formatPrice(el.value); if (f !== el.value) { el.value = f; item.price = f; changed(); } },
-          })))));
+          }))),
+        restuChips(item, () => { drawExtras(); drawRestu(); })));
     });
     box.append(h('button', { class: 'btn wide', disabled: n >= 6, onclick: () => {
-      ex.items.push({ name: 'NUEVO EXTRA', price: '', image: null, defaultImage: null });
+      ex.items.push({ uid: uid(), name: 'NUEVO EXTRA', price: '', image: null, defaultImage: null });
       drawExtras(); changed(true);
     } }, n >= 6 ? 'Máximo 6 extras' : '+ Agregar extra'));
     syncOrientation();
+    syncSummaries();
+  }
+
+  // ------------------------------------------------------------ Restu (precios automáticos)
+  const R = window.SmashRestu;
+  let restuReport = null;
+  const catalogItems = () => (project.restu.catalog && project.restu.catalog.items) || [];
+  const catalogById = id => catalogItems().find(i => i.id === id);
+
+  // Selector "producto en Restu" para una línea de precio de una burger.
+  function restuSelect(q, onPick) {
+    const sel = h('select', { class: 'restu-link', title: 'Producto de Restu del que sale este precio' });
+    sel.append(h('option', { value: '' }, '— Precio manual (sin Restu) —'));
+    const groups = new Map();
+    for (const it of catalogItems()) {
+      if (!groups.has(it.categoryName)) groups.set(it.categoryName, h('optgroup', { label: it.categoryName }));
+      const o = h('option', { value: it.id }, `${it.name} · ${formatPrice(String(it.price))}`);
+      if (it.id === q.restuId) o.selected = true;
+      groups.get(it.categoryName).append(o);
+    }
+    sel.append(...groups.values());
+    if (q.restuId && !catalogById(q.restuId)) sel.prepend(h('option', { value: q.restuId, selected: true }, '⚠ Ya no existe en Restu'));
+    sel.addEventListener('change', () => {
+      q.restuId = sel.value || null;
+      const it = catalogById(q.restuId);
+      if (it) q.price = formatPrice(String(it.price));
+      onPick(); changed();
+    });
+    return sel;
+  }
+
+  // Casillas con los productos de Restu que forman el precio de un extra.
+  function restuChips(x, onPick) {
+    const items = catalogItems().filter(i => !i.burger);
+    if (!items.length) return null;
+    const ids = new Set(x.restuIds || []);
+    return h('div', { class: 'field' }, h('span', {}, 'Precio desde Restu'),
+      h('div', { class: 'chips' }, items.map(it => {
+        const cb = h('input', { type: 'checkbox' }); cb.checked = ids.has(it.id);
+        cb.addEventListener('change', () => {
+          if (cb.checked) ids.add(it.id); else ids.delete(it.id);
+          x.restuIds = [...ids];
+          const price = R.priceFor(x.restuIds.map(catalogById).filter(Boolean));
+          if (price) x.price = price;
+          onPick(); changed();
+        });
+        return h('label', { class: 'chip-check' }, cb, `${it.name} · ${formatPrice(String(it.price))}`);
+      })),
+      h('small', {}, 'Si marcas varios con precios distintos, se muestra "DESDE" el más barato.'));
+  }
+
+  async function photoFromUrl(url) {
+    if (!url) return null;
+    try { const r = await fetch(url); if (!r.ok) return null; return await readExtraPhoto(await r.blob()); } catch (e) { return null; }
+  }
+
+  async function syncRestu() {
+    const slug = String(project.restu.slug || '').trim().toLowerCase();
+    const btn = $('#restuBtn'), msg = $('#restuMsg');
+    if (!slug) { msg.textContent = 'Escribe el nombre del local en Restu (lo que va después de menu.restu.app/).'; return; }
+    btn.disabled = true; msg.classList.remove('err'); msg.textContent = 'Conectando con Restu…';
+    try {
+      const d = await R.fetchStorefront(slug);
+      const catalog = R.catalogFrom(d);
+      project.restu.slug = slug;
+      project.restu.catalog = catalog;
+      ensureUids();
+      R.autoLink(project, catalog);
+      const prices = R.applyPrices(project, catalog);
+      const promos = R.syncPromos(project, d, catalog, uid);
+      project.restu.lastSync = catalog.fetchedAt;
+      restuReport = { ...prices, promos };
+      drawForm(); changed(true);
+    } catch (e) {
+      console.error(e);
+      msg.classList.add('err'); msg.textContent = e.message;
+    } finally { const b = $('#restuBtn'); if (b) b.disabled = false; }
+  }
+
+  function drawRestu() {
+    const rs = project.restu, cat = rs.catalog, box = $('#restu');
+    const slug = textInput(rs, 'slug');
+    slug.placeholder = 'smashcar';
+    const when = rs.lastSync ? new Date(rs.lastSync).toLocaleString('es-CL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : null;
+    const parts = [
+      h('p', { class: 'muted' }, 'Trae los precios y las promociones de tu carta en Restu. Tus fotos y nombres del video no cambian.'),
+      h('div', { class: 'restu-row' },
+        field('Local en Restu', h('div', { class: 'slug' }, h('span', {}, 'menu.restu.app/'), slug)),
+        h('button', { class: 'btn primary small', id: 'restuBtn', onclick: syncRestu }, 'ACTUALIZAR')),
+      h('p', { class: 'muted', id: 'restuMsg' }, when ? `Última actualización: ${when} · ${cat.name} · ${cat.items.length} productos` : 'Todavía no se ha conectado.'),
+    ];
+    if (restuReport) {
+      const { changes, missing, promos } = restuReport;
+      const list = (title, rows, cls = '') => rows.length ? h('div', { class: 'report ' + cls }, h('strong', {}, title), h('ul', {}, rows.map(r => h('li', {}, r)))) : null;
+      parts.push(
+        changes.length ? list(`Precios actualizados (${changes.length})`, changes.map(c => `${c.where}: ${c.from || 'sin precio'} → ${c.to}`), 'ok')
+          : h('div', { class: 'report ok' }, h('strong', {}, 'Los precios ya estaban al día.')),
+        list('Ya no existen en Restu (quedó el precio anterior)', missing, 'warn'),
+        list('Promos nuevas desde Restu', promos.added, 'ok'),
+        list('Promos que terminaron en Restu (se quitaron)', promos.ended));
+    }
+    if (cat) {
+      const manual = [];
+      for (const b of project.burgers) for (const q of b.prices) if (!q.restuId) manual.push(`${b.name}${q.label ? ' ' + q.label : ''}`);
+      for (const x of project.extras.items) if (!(x.restuIds || []).length) manual.push(x.name);
+      if (manual.length) parts.push(h('div', { class: 'report warn' }, h('strong', {}, 'Con precio manual (sin vincular)'),
+        h('ul', {}, manual.map(m => h('li', {}, m))), h('small', {}, 'Elige su producto de Restu dentro de su tarjeta, o déjalo así si no se vende en Restu.')));
+      const free = R.unlinked(project, cat);
+      const add = (label, fn) => h('button', { class: 'link', onclick: async e => {
+        e.target.disabled = true; e.target.textContent = 'Agregando…';
+        await fn(); drawForm(); changed(true);
+      } }, label);
+      const rows = [
+        ...free.burgers.map(g => h('li', {}, `${g.base} (${g.items.map(i => i.variant || formatPrice(String(i.price))).join(' / ')}) `,
+          project.burgers.length < 6 ? add('+ Agregar a burgers', async () => {
+            const b = R.burgerFromGroup(g); b.uid = uid(); b.image = await photoFromUrl(b.imageUrl); delete b.imageUrl;
+            project.burgers.push(b);
+          }) : null)),
+        ...free.extras.map(i => h('li', {}, `${i.name} · ${formatPrice(String(i.price))} `,
+          project.extras.items.length < 6 ? add('+ Agregar a extras', async () => {
+            const x = R.extraFromItem(i); x.uid = uid(); x.image = await photoFromUrl(x.imageUrl); delete x.imageUrl;
+            project.extras.items.push(x);
+          }) : null)),
+      ];
+      if (rows.length) parts.push(h('div', { class: 'report' }, h('strong', {}, 'En Restu pero no en el video'), h('ul', {}, rows),
+        h('small', {}, 'Las fotos de Restu traen fondo y texto: para el video conviene cambiarlas por un PNG sin fondo.')));
+    }
+    box.replaceChildren(...parts.filter(Boolean));
+  }
+
+  // ------------------------------------------------------------ promociones y combos
+  const DISPLAY = [['scene', 'Escena propia'], ['band', 'En el menú'], ['both', 'Ambas']];
+  function drawPromos() {
+    const pm = project.promos, box = $('#promos'), n = pm.items.length;
+    box.innerHTML = '';
+    box.append(
+      h('p', { class: 'muted' }, 'Las promos vigentes de Restu llegan solas al actualizar. También puedes crear otras solo para el video.'),
+      h('div', { class: 'row2' }, field('Duración de cada escena (s)', textInput(project.durations, 'promo', { type: 'number', step: 0.5, min: 3, max: 15 })), h('span')));
+    const owners = [
+      ...project.burgers.map(b => ({ uid: b.uid, name: b.name || 'Burger' })),
+      ...project.extras.items.map(x => ({ uid: x.uid, name: x.name || 'Extra' })),
+    ];
+    pm.items.forEach((pr, i) => {
+      const restu = pr.source === 'restu';
+      const head = h('strong', {}, pr.title || 'Promo');
+      const move = d => { const j = i + d; if (j < 0 || j >= n) return; [pm.items[i], pm.items[j]] = [pm.items[j], pm.items[i]]; drawPromos(); changed(true); };
+      const displayBtns = h('div', { class: 'orientation', role: 'group', 'aria-label': 'Cómo se muestra la promo' },
+        DISPLAY.map(([v, l]) => h('button', { type: 'button', class: 'btn', 'aria-pressed': String((pr.display || 'scene') === v),
+          onclick: () => { pr.display = v; drawPromos(); changed(true); } }, l)));
+      const shows = new Set(pr.shows || []);
+      const showChips = h('div', { class: 'chips' }, owners.map(o => {
+        const cb = h('input', { type: 'checkbox' }); cb.checked = shows.has(o.uid);
+        cb.addEventListener('change', () => {
+          // mantiene el orden en que se marcan: la primera foto va al centro
+          pr.shows = cb.checked ? [...(pr.shows || []).filter(u => u !== o.uid), o.uid] : (pr.shows || []).filter(u => u !== o.uid);
+          changed(true);
+        });
+        return h('label', { class: 'chip-check' }, cb, o.name);
+      }));
+      const photo = h('div', { class: 'photo' },
+        pr.image ? h('img', { class: 'thumb', alt: '', src: pr.image }) : null,
+        h('div', {},
+          h('button', { class: 'btn', onclick: async () => {
+            const f = await pickFile('image/png,image/webp,image/jpeg'); if (!f) return;
+            pr.image = await readExtraPhoto(f); drawPromos(); changed(true);
+          } }, pr.image ? 'Cambiar foto propia' : 'Usar foto propia'),
+          pr.image ? h('button', { class: 'link', onclick: () => { pr.image = null; drawPromos(); changed(true); } }, 'Quitar foto propia') : null));
+      box.append(h('div', { class: 'card' + (pr.enabled === false ? ' off' : '') },
+        h('div', { class: 'card-head' }, h('div', { class: 'title-tag' }, head, h('span', { class: 'tag' + (restu ? ' restu' : '') }, restu ? 'RESTU' : 'MANUAL')),
+          h('div', { class: 'btns' },
+            h('button', { class: 'icon-btn', title: 'Subir', disabled: i === 0, onclick: () => move(-1) }, '↑'),
+            h('button', { class: 'icon-btn', title: 'Bajar', disabled: i === n - 1, onclick: () => move(1) }, '↓'),
+            restu ? null : h('button', { class: 'icon-btn danger', title: 'Eliminar', onclick: () => {
+              if (!confirm(`¿Eliminar ${pr.title || 'esta promo'}?`)) return;
+              pm.items.splice(i, 1); drawPromos(); changed(true);
+            } }, '🗑'))),
+        check(pr, 'enabled', 'Mostrar en el video'),
+        h('div', { class: 'field' }, h('span', {}, 'Cómo se muestra'), displayBtns),
+        h('div', { class: 'row2' },
+          field('Etiqueta', textInput(pr, 'badge', { upper: true }), 'Ej: COMBO, 2X1, OFERTA'),
+          field('Precio', textInput(pr, 'price', { onblur: el => { const f = formatPrice(el.value); if (f !== el.value) { el.value = f; pr.price = f; changed(); } } }), 'Ej: $10.290, 2x1, -20%')),
+        field('Título', textInput(pr, 'title', { upper: true, after: () => { head.textContent = pr.title || 'Promo'; } })),
+        field('Descripción', textInput(pr, 'subtitle', { upper: true, multiline: true, rows: 2 })),
+        h('div', { class: 'row2' },
+          field('Precio normal (opcional)', textInput(pr, 'regular', { onblur: el => { const f = formatPrice(el.value); if (f !== el.value) { el.value = f; pr.regular = f; changed(); } } }), 'Si es mayor, sale "AHORRAS"'),
+          field('Cuándo (opcional)', textInput(pr, 'when', { upper: true }), 'Ej: SOLO MARTES')),
+        h('div', { class: 'field' }, h('span', {}, 'Fotos que salen'), showChips, h('small', {}, 'La primera que marques va al centro. O sube una foto propia de la promo:')),
+        photo,
+        restu ? h('small', { class: 'muted' }, 'Al actualizar desde Restu se refrescan el precio, el precio normal y el horario. Para quitarla, desmarca "Mostrar en el video" o desactívala en Restu.') : null));
+    });
+    box.append(h('button', { class: 'btn wide', disabled: n >= 6, onclick: () => {
+      pm.items.push({ id: uid(), source: 'manual', enabled: true, display: 'scene', badge: 'PROMO', title: 'NUEVA PROMO', subtitle: '', price: '', regular: '', when: '', shows: project.burgers[0] ? [project.burgers[0].uid] : [], image: null });
+      drawPromos(); changed(true);
+    } }, n >= 6 ? 'Máximo 6 promos' : '+ Agregar promoción'));
     syncSummaries();
   }
 
@@ -3894,8 +4617,10 @@ if (!window.SMASH_ASSETS || !window.SmashEngine) {
       check(ef, 'steam', 'Vapor detrás de las burgers'), check(ef, 'embers', 'Chispas que suben'),
       check(ef, 'fire', 'Fuego en la parte de abajo'), check(ef, 'glow', 'Brillo anaranjado'),
       check(ef, 'rays', 'Rayos y anillos de luz'), check(ef, 'shake', 'Rebote y temblor al caer'));
+    drawRestu();
     drawBurgers();
     drawExtras();
+    drawPromos();
     const sel = $('#minutes'); sel.value = String(project.exportMinutes);
     updateTotals();
   }
@@ -3977,7 +4702,7 @@ if (!window.SMASH_ASSETS || !window.SmashEngine) {
     $('#cancelBtn').addEventListener('click', () => { cancel = true; });
     $('#saveBtn').addEventListener('click', saveJson);
     $('#openBtn').addEventListener('click', openJson);
-    $('#resetBtn').addEventListener('click', () => { if (confirm('¿Volver al menú original? Se pierden los cambios no guardados.')) { project = clone(DEFAULT); drawForm(); changed(true); } });
+    $('#resetBtn').addEventListener('click', () => { if (confirm('¿Volver al menú original? Se pierden los cambios no guardados.')) { project = normalizeProject(null); restuReport = null; drawForm(); changed(true); } });
     $('#fsBtn').addEventListener('click', () => view.requestFullscreen && view.requestFullscreen());
     if (!('VideoEncoder' in window)) $('#exportWarn').hidden = false;
     await rebuild();

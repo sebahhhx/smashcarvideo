@@ -426,10 +426,12 @@
     img(src) { return src ? this.cached('img:' + src, () => loadImage(src)) : Promise.resolve(null); }
 
     timeline() {
-      const d = this.p.durations, n = Math.max(1, this.p.burgers.length);
+      const d = this.p.durations, n = Math.max(1, this.p.burgers.length), m = this.nPromo || 0;
       const I = clamp(+d.intro || 4.5, 3, 10), B = clamp(+d.burger || 12, 1, 30), G = clamp(+d.grid || 7.5, 5, 20);
-      const T_SPOT = I, T_GRID = I + n * B, L = T_GRID + G;
-      return { I, B, G, n, T_SPOT, T_GRID, L };
+      const P = clamp(+d.promo || 6, 3, 15);
+      // intro → escenas de promos → menú (con foco en cada burger) → menú sin destacar
+      const T_PROMO = I, T_SPOT = I + m * P, T_GRID = T_SPOT + n * B, L = T_GRID + G;
+      return { I, B, G, P, m, n, T_PROMO, T_SPOT, T_GRID, L };
     }
     get duration() { return this.p ? this.timeline().L : 60; }
     get frames() { return Math.round(this.duration * FPS); }
@@ -444,6 +446,7 @@
         layout: ex.layout === 'right' ? 'right' : 'bottom',
         items: (Array.isArray(ex.items) ? ex.items : []).filter(d => d && d.name && d.price).slice(0, 6),
       };
+      const extrasAll = Array.isArray(ex.items) ? ex.items : [];
       const vertical = p.orientation === 'vertical';
       const layout = vertical ? layoutVertical(p.burgers.length, p.extras.items.length, !!p.extras.note)
         : layoutHorizontal(p.burgers.length, p.extras.items.length, p.extras.layout);
@@ -576,7 +579,13 @@
           price: text(formatPrice(d.price), `64px ${ANTON}`, YEL),
         });
       }
-      this.S = S; this.p = p; this.layout = layout; this.geom = geom; this.ready = true;
+      S.promos = [];
+      const promoList = (p.promos && Array.isArray(p.promos.items) ? p.promos.items : [])
+        .filter(x => x && x.enabled !== false && String(x.title || '').trim()).slice(0, 6);
+      for (const pr of promoList) S.promos.push(await this.promoSprites(pr, p, img, extrasAll, vertical));
+      S.promoScenes = S.promos.filter(x => x.display !== 'band');
+      S.promoBand = S.promos.filter(x => x.display !== 'scene');
+      this.S = S; this.p = p; this.layout = layout; this.geom = geom; this.nPromo = S.promoScenes.length; this.ready = true;
       return this;
     }
 
@@ -908,10 +917,10 @@
       }
     }
 
-    verticalHeader(ctx, alpha = 1) {
+    verticalHeader(ctx, alpha = 1, narrow = false) {
       const S = this.S;
       draw(ctx, S.logo_v, 132, 106, { a: alpha });
-      drawFit(ctx, S.name_v, 222, 106, 800, 84, { anchor: 'l', a: alpha });
+      drawFit(ctx, S.name_v, 222, 106, narrow ? 360 : 800, 84, { anchor: 'l', a: alpha });
       ctx.save(); ctx.globalAlpha = alpha;
       ctx.fillStyle = 'rgba(245,184,46,0.55)'; ctx.fillRect(64, 187, 952, 2);
       ctx.restore();
@@ -1180,8 +1189,9 @@
     }
 
     menuVertical(ctx, t, tl) {
-      const S = this.S;
-      this.verticalHeader(ctx);
+      const S = this.S, band = S.promoBand.length > 0;
+      this.verticalHeader(ctx, 1, band);
+      if (band) this.promoBand(ctx, t, tl, { x: 600, y: 28, w: 416, h: 150 });
       drawFit(ctx, S.title_v, 540, 258, 930, 116);
       drawFit(ctx, S.combo_v, 540, 350, 920, 76);
       this.menuCards(ctx, t, tl);
@@ -1192,17 +1202,193 @@
       const S = this.S;
       draw(ctx, S.logo_sm, 93, 73);
       drawFit(ctx, S.name_sm, 160, 73, 530, 82, { anchor: 'l' });
-      drawFit(ctx, S.menuTitle, 960, 82, 650, 105);
-      drawFit(ctx, S.menuNote, 960, 158, 1100, 54);
+      const band = S.promoBand.length > 0;
+      drawFit(ctx, S.menuTitle, 960, 82, band ? 620 : 650, 105);
+      drawFit(ctx, S.menuNote, 960, 158, band ? 620 : 1100, 54);
+      if (band) this.promoBand(ctx, t, tl, { x: 1300, y: 20, w: 572, h: 160 });
       ctx.fillStyle = 'rgba(245,184,46,0.58)'; ctx.fillRect(48, 193, 1824, 2);
       this.menuCards(ctx, t, tl);
       if (this.layout.extras) this.menuExtras(ctx, this.layout.extras);
     }
 
+    // ------------------------------------------------------------ promociones
+    // Foto del combo: las burgers al centro y los extras a los lados, apoyados en la misma base.
+    composeArt(parts) {
+      const H0 = 520, main = parts[0];
+      const ms = Math.min(H0 / main.spr.height, 760 / main.spr.width);
+      const mw = main.spr.width * ms, mh = main.spr.height * ms;
+      let right = mw / 2, left = mw / 2;
+      const side = parts.slice(1).map((q, i) => {
+        const s = Math.min(H0 * (q.burger ? 0.8 : 0.6) / q.spr.height, H0 * (q.burger ? 0.9 : 0.78) / q.spr.width);
+        const w = q.spr.width * s, h = q.spr.height * s, overlap = w * 0.32, onRight = i % 2 === 0;
+        const cx = onRight ? right + w / 2 - overlap : -(left + w / 2 - overlap);
+        if (onRight) right += w - overlap; else left += w - overlap;
+        return { spr: q.spr, w, h, cx };
+      });
+      const Hc = Math.max(mh, ...side.map(q => q.h)) + 30, c = canvas(left + right + 40, Hc), x = ctx2d(c);
+      const ox = left + 20, base = Hc - 10;
+      for (const q of [...side].reverse()) x.drawImage(q.spr, ox + q.cx - q.w / 2, base - 8 - q.h, q.w, q.h);
+      x.drawImage(main.spr, ox - mw / 2, base - mh, mw, mh);
+      return shadowed(c, { off: 8, blur: 12, op: 0.55 });
+    }
+
+    async promoArt(pr, p, img, extrasAll) {
+      if (pr.image) {
+        const raw = await this.img(pr.image);
+        const art = raw ? await this.cached('promo:' + pr.image.length + ':' + pr.image.slice(-80), () => fitH(removeFlatBackground(raw).canvas, 620, 1100)) : null;
+        return art ? { art, main: art } : null;
+      }
+      const parts = [];
+      for (const uid of pr.shows || []) {
+        const b = p.burgers.find(q => q.uid === uid);
+        if (b) {
+          const pic = b.image ? await this.img(b.image) : (b.defaultImage ? img[b.defaultImage] : img.logoBrand);
+          const key = b.image ? b.image.length + ':' + b.image.slice(-80) : (b.defaultImage || 'logo');
+          const spr = pic ? await this.cached(`bun:${key}:520`, () => burgerByBun(pic, 520)) : null;
+          if (spr) parts.push({ burger: true, spr });
+          continue;
+        }
+        const e = extrasAll.find(q => q && q.uid === uid);
+        if (!e) continue;
+        const raw = e.image ? await this.img(e.image) : e.defaultImage ? img[e.defaultImage] : null;
+        const key = e.image ? e.image.length + ':' + e.image.slice(-80) : 'def:' + e.defaultImage;
+        if (raw) parts.push({ burger: false, spr: await this.cached('extra:' + key, () => fitH(removeFlatBackground(raw).canvas, 360, 900)) });
+      }
+      return parts.length ? { art: this.composeArt(parts), main: parts[0].spr } : null;
+    }
+
+    async promoSprites(pr, p, img, extrasAll, vertical) {
+      const up = s => String(s || '').toUpperCase().trim(), num = s => Number(String(s || '').replace(/[^\d]/g, '')) || 0;
+      const title = up(pr.title), badge = up(pr.badge), price = formatPrice(up(pr.price)), regular = formatPrice(up(pr.regular));
+      const P = { name: title, display: ['scene', 'band', 'both'].includes(pr.display) ? pr.display : 'scene' };
+      const pics = await this.promoArt(pr, p, img, extrasAll);
+      P.art = pics ? pics.art : null;
+      P.bandArt = pics ? pics.main : null;
+      const align = vertical ? 'center' : 'left', tw = vertical ? 940 : 860;
+      P.tag = badge ? text(badge, `46px ${ANTON}`, DARK, { shadow: false }) : null;
+      P.title = paraSprite(title, `${vertical ? 112 : 118}px ${ANTON}`, YEL, tw, vertical ? 112 : 118, { align, maxLines: 2 });
+      P.sub = up(pr.subtitle) ? paraSprite(up(pr.subtitle), `52px ${BEBAS}`, WHITE, tw, 56, { align, maxLines: 2 }) : null;
+      P.when = up(pr.when) ? paraSprite(up(pr.when), `44px ${BEBAS}`, YEL, tw, 48, { align, maxLines: 2 }) : null;
+      const money = /^\$/.test(price);
+      if (price) {
+        P.burstLab = money ? text('SOLO', `40px ${ANTON}`, DARK, { shadow: false }) : null;
+        P.burstPr = text(price, money ? `${price.length < 7 ? 76 : price.length < 9 ? 68 : 56}px ${ANTON}` : `112px ${ANTON}`, DARK, { shadow: false });
+        P.burstSc = Math.min(1, (money ? 280 : 260) / P.burstPr.width);
+      }
+      if (money && num(regular) > num(price)) {
+        P.save = textSprite([{ text: 'AHORRAS', font: `44px ${BEBAS}`, color: WHITE }, { text: formatPrice(String(num(regular) - num(price))), font: `62px ${ANTON}`, color: YEL }], { gap: 16, shadow: false });
+        P.before = text('ANTES ' + regular, `42px ${BEBAS}`, 'rgba(255,255,255,0.72)', { shadow: false });
+      }
+      P.bandTag = badge ? text(badge, `30px ${ANTON}`, DARK, { shadow: false }) : null;
+      P.bandTitle = text(title, `56px ${ANTON}`, WHITE);
+      P.bandPrice = price ? text(price, `64px ${ANTON}`, YEL) : null;
+      return P;
+    }
+
+    // Etiqueta amarilla (COMBO, PROMO…) con el texto oscuro encima.
+    tagPill(ctx, spr, x, y, a, anchor = 'l', pad = 18) {
+      if (!spr || a <= 0.003) return;
+      const w = spr.width + pad * 2, h = spr.height + pad * 0.7, left = anchor === 'l' ? x : x - w / 2;
+      ctx.save(); ctx.globalAlpha = Math.min(1, a);
+      ctx.fillStyle = YEL; ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 4;
+      ctx.beginPath(); ctx.roundRect(left, y - h / 2, w, h, h / 2); ctx.fill();
+      ctx.restore();
+      draw(ctx, spr, left + w / 2, y, { a });
+    }
+
+    promoScene(ctx, t, tl) {
+      const ts = t - tl.T_PROMO, k = Math.min(tl.m - 1, Math.floor(ts / tl.P)), tau = ts - k * tl.P;
+      const P = this.S.promoScenes[k];
+      if (!P) return;
+      const V = this.vertical, D = tl.P, op = 1 - eInOut(prog(tau, D - 0.55, D - 0.05));
+      if (V) this.verticalHeader(ctx, op);
+      const L = V
+        ? { x: 540, top: 225, art: [540, 1340, 990, 680], burst: [300, 1548], save: [730, 1548] }
+        : { x: 110, top: 205, art: [1360, 905, 960, 660], burst: [330, 770], save: [560, 770] };
+      // foto: cae con rebote, con brillo, rayos y vapor detrás
+      const [ax, ab, aw, ah] = L.art, art = P.art;
+      const sc = art ? Math.min(1, aw / art.width, ah / art.height) : 1, h = art ? art.height * sc : 300, w = art ? art.width * sc : 500;
+      const gin = eOut(prog(tau, 0.4, 1.0)) * op;
+      if (this.p.effects.rays && gin > 0) {
+        ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.14 * gin;
+        ctx.translate(ax, ab - h / 2); ctx.rotate(t * 8 * Math.PI / 180);
+        ctx.drawImage(this.fx.rays, -900, -900, 1800, 1800); ctx.restore();
+      }
+      this.glow(ctx, ax, ab - h / 2, w * 1.4, h * 1.5, 0.7 * gin);
+      this.steam(ctx, t, ax, ab - h, Math.min(w, 520) * 0.6, 0.55 * eOut(prog(tau, 0.7, 1.6)) * op, { seed: 'promo' + k, n: 14, rise: 300, size: [50, 190] });
+      this.dropBurger(ctx, art, ax, ab, tau, t, { op, sc });
+      this.impactPuffs(ctx, tau, ax, ab, w * 0.8, 0.55, 20 + k);
+      // textos
+      const ut = eOut(prog(tau, 0.1, 0.5)) * op;
+      let y = L.top;
+      if (P.tag) { this.tagPill(ctx, P.tag, V ? L.x : L.x + (1 - ut) * -200, y, ut, V ? 'c' : 'l'); y += 50; }
+      const ui = eBack(prog(tau, 0.2, 0.75), 1.4), ua = clamp(ui * 1.5) * op;
+      const block = (spr, a, dy = 0) => {
+        if (!spr) return;
+        const s = Math.min(1, (V ? 980 : 900) / spr.width);
+        draw(ctx, spr, V ? L.x : L.x - 20 * s, y - 14 + dy, { anchor: V ? 'tc' : 'tl', a, sx: s });
+        y += (spr.height - 34) * s;
+      };
+      block(P.title, ua, (1 - ui) * 40);
+      block(P.sub, eOut(prog(tau, 0.45, 0.95)) * op);
+      y += 6;
+      block(P.when, eOut(prog(tau, 0.6, 1.1)) * op);
+      // precio en la estrella y el ahorro al lado
+      const ub = prog(tau, 0.9, 1.5);
+      if (ub > 0 && P.burstPr) {
+        const s = eElastic(ub) * (1 + 0.045 * Math.sin(2 * Math.PI * t * 1.1)) * (1 - 0.5 * (1 - op)) * (V ? 1.05 : 1);
+        const [bx, by] = L.burst;
+        draw(ctx, this.S.burst, bx, by, { a: op, sx: s, rot: t * 14 });
+        if (P.burstLab) draw(ctx, P.burstLab, bx, by - 46 * s, { a: op, sx: s });
+        draw(ctx, P.burstPr, bx, by + (P.burstLab ? 18 : 6) * s, { a: op, sx: s * P.burstSc });
+        this.ring(ctx, bx, by, prog(tau, 0.95, 1.6), 260, 0.6);
+      }
+      const us = eBack(prog(tau, 1.2, 1.7), 1.6);
+      if (us > 0 && P.save) {
+        const [sx, sy] = L.save, a = clamp(us) * op, x0 = sx + (1 - us) * 300;
+        const pw = P.save.width + 44, ph = P.save.height + 26;
+        ctx.save(); ctx.globalAlpha = a;
+        ctx.fillStyle = 'rgba(12,10,8,0.92)'; ctx.strokeStyle = RED; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.roundRect(x0, sy - 30 - ph / 2, pw, ph, ph / 2); ctx.fill(); ctx.stroke();
+        ctx.restore();
+        draw(ctx, P.save, x0 + pw / 2, sy - 30, { a });
+        if (P.before) {
+          draw(ctx, P.before, x0 + pw / 2, sy + 42, { a });
+          ctx.save(); ctx.globalAlpha = a * 0.9; ctx.strokeStyle = RED; ctx.lineWidth = 4;
+          const bw = P.before.width - 6;
+          ctx.beginPath(); ctx.moveTo(x0 + pw / 2 - bw / 2, sy + 44); ctx.lineTo(x0 + pw / 2 + bw / 2, sy + 40); ctx.stroke();
+          ctx.restore();
+        }
+      }
+    }
+
+    // Recuadro de promos dentro de la pantalla del menú; si hay varias, van rotando.
+    promoBand(ctx, t, tl, r) {
+      const list = this.S.promoBand, n = list.length;
+      if (!n) return;
+      const per = 4.5, ts = Math.max(0, t - tl.T_SPOT), k = Math.floor(ts / per) % n, tau = ts % per;
+      const a = n > 1 ? eOut(prog(tau, 0, 0.4)) * (1 - eInOut(prog(tau, per - 0.4, per))) : 1;
+      const P = list[k], pulse = 0.5 + 0.5 * Math.sin(t * 3);
+      ctx.save();
+      const g = ctx.createLinearGradient(r.x, r.y, r.x + r.w, r.y + r.h);
+      g.addColorStop(0, 'rgba(60,34,12,0.95)'); g.addColorStop(1, 'rgba(16,11,8,0.95)');
+      ctx.fillStyle = g; ctx.strokeStyle = `rgba(245,184,46,${0.6 + 0.3 * pulse})`; ctx.lineWidth = 3;
+      ctx.shadowColor = 'rgba(245,184,46,0.35)'; ctx.shadowBlur = 18 + 10 * pulse;
+      ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 20); ctx.fill(); ctx.stroke();
+      ctx.restore();
+      const artW = P.bandArt ? Math.min(r.w * 0.34, 170) : 0;
+      if (P.bandArt) drawFit(ctx, P.bandArt, r.x + 14 + artW / 2, r.y + r.h / 2 + 2, artW, r.h - 22, { a });
+      const tx = r.x + (P.bandArt ? artW + 26 : 22), tw = r.x + r.w - 16 - tx;
+      if (P.bandTag) this.tagPill(ctx, P.bandTag, tx, r.y + 27, a, 'l', 12);
+      drawFit(ctx, P.bandTitle, tx - 14, r.y + (P.bandTag ? 76 : 58), tw + 28, 62, { anchor: 'l', a });
+      if (P.bandPrice) drawFit(ctx, P.bandPrice, tx - 14, r.y + r.h - 36, tw + 28, 72, { anchor: 'l', a });
+    }
+
     renderVertical(ctx, t, tl) {
       ctx.drawImage(this.S.bg, 0, 0);
       this.fire(ctx, t);
-      if (t < tl.T_SPOT) this.introVertical(ctx, t, tl);
+      if (t < tl.I) this.introVertical(ctx, t, tl);
+      else if (t < tl.T_SPOT) this.promoScene(ctx, t, tl);
       else this.menuVertical(ctx, t, tl);
       ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
       ctx.drawImage(this.S.bar_v, 0, PORTRAIT_H - 142);
@@ -1252,7 +1438,8 @@
       }
       ctx.drawImage(this.S.bg, 0, 0);
       this.fire(ctx, t);
-      if (t < tl.T_SPOT) this.intro(ctx, t, tl);
+      if (t < tl.I) this.intro(ctx, t, tl);
+      else if (t < tl.T_SPOT) this.promoScene(ctx, t, tl);
       else this.menuHorizontal(ctx, t, tl);
       ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
       ctx.drawImage(this.S.bar, 0, H - 100);
@@ -1266,6 +1453,7 @@
 
     sceneStarts() {
       const tl = this.timeline(), s = [{ name: 'Intro', t: 0 }];
+      this.S.promoScenes.forEach((P, k) => s.push({ name: 'Promo: ' + P.name, t: tl.T_PROMO + k * tl.P + 0.01 }));
       for (let i = 0; i < tl.n; i++) s.push({ name: this.p.burgers[i].name || `Burger ${i + 1}`, t: tl.T_SPOT + i * tl.B + 0.01 });
       s.push({ name: 'Menú completo', t: tl.T_GRID + 0.01 });
       return s;

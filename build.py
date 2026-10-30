@@ -22,6 +22,7 @@ parts = {
     '/*MUXER*/': (ROOT / 'node_modules/mp4-muxer/build/mp4-muxer.js').read_text(encoding='utf-8'),
     '/*ENGINE*/': (ROOT / 'src/engine.js').read_text(encoding='utf-8'),
     '/*EXPORTER*/': (ROOT / 'src/exporter.js').read_text(encoding='utf-8'),
+    '/*RESTU*/': (ROOT / 'src/restu.js').read_text(encoding='utf-8'),
     '/*APP*/': (ROOT / 'src/app.js').read_text(encoding='utf-8'),
 }
 for k, v in parts.items():

@@ -17,11 +17,11 @@
   };
 
   const DEFAULT = {
-    version: 3,
+    version: 4,
     orientation: 'horizontal',
-    durations: { intro: 4.5, burger: 12, grid: 7.5 },
+    durations: { intro: 4.5, burger: 12, grid: 7.5, promo: 6 },
     exportMinutes: 20,
-    brand: { name: 'SMASHCAR', title: 'BURGERS', note: 'TODAS LAS BURGERS LLEVAN PAPAS FRITAS', phone: '+56 9 9549 9633', web: 'SMASHCAR.CL', logo: null, script: null },
+    brand: { name: 'SMASHCAR', title: 'BURGERS', note: 'TODAS LAS BURGERS LLEVAN PAPAS FRITAS', phone: '+56 9 3083 5991', web: 'SMASHCAR.CL', logo: null, script: null },
     effects: { steam: true, embers: true, fire: true, glow: true, rays: true, shake: true },
     // márgenes en % del cuadro para pantallas con zonas dañadas o tapadas (por orientación)
     safeArea: { horizontal: { top: 0, bottom: 0, left: 0, right: 0 }, vertical: { top: 0, bottom: 0, left: 0, right: 0 } },
@@ -39,6 +39,9 @@
         { name: 'AGUA', price: '$1.300', image: null, defaultImage: 'x_agua' },
       ],
     },
+    // carta en Restu: de ahí salen los precios y las promos (catalog es la última copia descargada)
+    restu: { slug: 'smashcar', catalog: null, lastSync: null },
+    promos: { items: [] },
   };
   const ICONS = [['bolt', 'Rayo'], ['bbq', 'Parrilla'], ['onion', 'Cebolla'], ['mush', 'Champiñón'], ['burger', 'Logo burger'], ['custom', 'Subir imagen…']];
 
@@ -62,6 +65,12 @@
   const view = $('#preview'), vctx = view.getContext('2d', { alpha: false });
 
   const clone = o => JSON.parse(JSON.stringify(o));
+  const uid = () => Math.random().toString(36).slice(2, 10);
+  // Identificador fijo de cada burger y extra: las promos lo usan para saber qué fotos mostrar.
+  function ensureUids(p = project) {
+    for (const b of p.burgers) if (!b.uid) b.uid = uid();
+    for (const x of p.extras.items) if (!x.uid) x.uid = uid();
+  }
   function normalizeProject(saved) {
     const p = Object.assign(clone(DEFAULT), saved || {});
     p.brand = Object.assign(clone(DEFAULT.brand), p.brand);
@@ -90,7 +99,14 @@
       item.defaultImage = def ? def.defaultImage : null;
     }
     delete p.drinks;
+    p.durations = Object.assign(clone(DEFAULT.durations), p.durations);
+    p.restu = Object.assign(clone(DEFAULT.restu), p.restu);
+    p.promos = Object.assign(clone(DEFAULT.promos), p.promos);
+    p.promos.items = Array.isArray(p.promos.items) ? p.promos.items.filter(Boolean) : [];
+    ensureUids(p);
     if (p.brand.note === 'TODOS LOS COMBOS LLEVAN PAPAS FRITAS') p.brand.note = DEFAULT.brand.note;
+    // número antiguo de Smashcar: se cambia por el actual (otros números escritos a mano se respetan)
+    if (String(p.brand.phone || '').replace(/\D/g, '') === '56995499633') p.brand.phone = DEFAULT.brand.phone;
     p.version = DEFAULT.version;
     return p;
   }
@@ -244,9 +260,12 @@
     const I = Math.max(3, Math.min(10, +d.intro || 4.5));
     const B = Math.max(1, Math.min(30, +d.burger || 12));
     const G = Math.max(5, Math.min(20, +d.grid || 7.5));
-    const L = I + n * B + G;
+    const P = Math.max(3, Math.min(15, +d.promo || 6));
+    // igual que el motor: hasta 6 promos activas con título; las "solo en el menú" no suman escena
+    const m = project.promos.items.filter(x => x.enabled !== false && String(x.title || '').trim()).slice(0, 6).filter(x => x.display !== 'band').length;
+    const L = I + m * P + n * B + G;
     const seconds = v => v.toFixed(1).replace('.', ',');
-    $('#loopTotal').textContent = `Inicio ${seconds(I)} s + ${n} destacados × ${seconds(B)} s + cierre ${seconds(G)} s = loop ${seconds(L)} s`;
+    $('#loopTotal').textContent = `Inicio ${seconds(I)} s${m ? ` + ${m} promo${m > 1 ? 's' : ''} × ${seconds(P)} s` : ''} + ${n} destacados × ${seconds(B)} s + cierre ${seconds(G)} s = loop ${seconds(L)} s`;
     const reps = Math.max(1, Math.round(project.exportMinutes * 60 / L));
     $('#exportInfo').textContent = project.exportMinutes > 0
       ? `${reps} vueltas del loop · ${fmtT(reps * L)} · aprox. ${fmtMB(reps * L * 4e6 / 8 * 0.9)}`
@@ -267,7 +286,9 @@
         const pr = textInput(q, 'price', { onblur: el => { const f = formatPrice(el.value); if (f !== el.value) { el.value = f; q.price = f; changed(); } } });
         pr.placeholder = '$7.990';
         const del = h('button', { class: 'icon-btn', title: 'Quitar línea', onclick: () => { b.prices.splice(j, 1); b.badge = Math.min(b.badge, Math.max(0, b.prices.length - 1)); drawPrices(); syncBadge(); changed(); } }, '✕');
-        priceRows.append(h('div', { class: 'price-row' }, lab, pr, b.prices.length > 1 ? del : h('span')));
+        const linked = !!(q.restuId && catalogById(q.restuId));
+        priceRows.append(h('div', { class: 'price-row' + (linked ? ' linked' : '') }, lab, pr, b.prices.length > 1 ? del : h('span'),
+          catalogItems().length ? restuSelect(q, () => { drawPrices(); drawRestu(); }) : null));
       });
       if (b.prices.length < 2) priceRows.append(h('button', { class: 'link', onclick: () => { b.prices.push({ label: 'DOBLE', price: '' }); drawPrices(); syncBadge(); changed(); } }, '+ Agregar precio'));
     }
@@ -315,7 +336,7 @@
     box.append(sectionHead(project.brand, 'title', 'note', 'Ej: BURGERS, SMASH BURGERS', 'Ej: TODAS LLEVAN PAPAS FRITAS'));
     project.burgers.forEach((b, i) => box.append(burgerCard(b, i)));
     box.append(h('button', { class: 'btn wide', disabled: project.burgers.length >= 6, onclick: () => {
-      project.burgers.push({ name: 'NUEVA BURGER', icon: 'burger', ingredients: '', prices: [{ label: 'SIMPLE', price: '' }, { label: 'DOBLE', price: '' }], badge: 1, note: '', big: false });
+      project.burgers.push({ uid: uid(), name: 'NUEVA BURGER', icon: 'burger', ingredients: '', prices: [{ label: 'SIMPLE', price: '' }, { label: 'DOBLE', price: '' }], badge: 1, note: '', big: false });
       drawBurgers(); changed(true);
     } }, project.burgers.length >= 6 ? 'Máximo 6 burgers' : '+ Agregar burger'));
     syncSummaries();
@@ -328,6 +349,8 @@
     $('#extrasSum').textContent = project.extras.title || 'EXTRAS';
     const shown = project.extras.items.filter(d => d.name && d.price).length;
     $('#extrasCount').textContent = shown ? `${shown} en el menú` : 'oculto';
+    const promos = project.promos.items.filter(x => x.enabled !== false && String(x.title || '').trim()).length;
+    $('#promosCount').textContent = promos ? `${promos} activa${promos > 1 ? 's' : ''}` : 'ninguna';
   }
 
   function sectionHead(obj, titleKey, noteKey, titleHint, noteHint) {
@@ -378,13 +401,208 @@
           field('Precio', textInput(item, 'price', {
             after: syncSummaries,
             onblur: el => { const f = formatPrice(el.value); if (f !== el.value) { el.value = f; item.price = f; changed(); } },
-          })))));
+          }))),
+        restuChips(item, () => { drawExtras(); drawRestu(); })));
     });
     box.append(h('button', { class: 'btn wide', disabled: n >= 6, onclick: () => {
-      ex.items.push({ name: 'NUEVO EXTRA', price: '', image: null, defaultImage: null });
+      ex.items.push({ uid: uid(), name: 'NUEVO EXTRA', price: '', image: null, defaultImage: null });
       drawExtras(); changed(true);
     } }, n >= 6 ? 'Máximo 6 extras' : '+ Agregar extra'));
     syncOrientation();
+    syncSummaries();
+  }
+
+  // ------------------------------------------------------------ Restu (precios automáticos)
+  const R = window.SmashRestu;
+  let restuReport = null;
+  const catalogItems = () => (project.restu.catalog && project.restu.catalog.items) || [];
+  const catalogById = id => catalogItems().find(i => i.id === id);
+
+  // Selector "producto en Restu" para una línea de precio de una burger.
+  function restuSelect(q, onPick) {
+    const sel = h('select', { class: 'restu-link', title: 'Producto de Restu del que sale este precio' });
+    sel.append(h('option', { value: '' }, '— Precio manual (sin Restu) —'));
+    const groups = new Map();
+    for (const it of catalogItems()) {
+      if (!groups.has(it.categoryName)) groups.set(it.categoryName, h('optgroup', { label: it.categoryName }));
+      const o = h('option', { value: it.id }, `${it.name} · ${formatPrice(String(it.price))}`);
+      if (it.id === q.restuId) o.selected = true;
+      groups.get(it.categoryName).append(o);
+    }
+    sel.append(...groups.values());
+    if (q.restuId && !catalogById(q.restuId)) sel.prepend(h('option', { value: q.restuId, selected: true }, '⚠ Ya no existe en Restu'));
+    sel.addEventListener('change', () => {
+      q.restuId = sel.value || null;
+      const it = catalogById(q.restuId);
+      if (it) q.price = formatPrice(String(it.price));
+      onPick(); changed();
+    });
+    return sel;
+  }
+
+  // Casillas con los productos de Restu que forman el precio de un extra.
+  function restuChips(x, onPick) {
+    const items = catalogItems().filter(i => !i.burger);
+    if (!items.length) return null;
+    const ids = new Set(x.restuIds || []);
+    return h('div', { class: 'field' }, h('span', {}, 'Precio desde Restu'),
+      h('div', { class: 'chips' }, items.map(it => {
+        const cb = h('input', { type: 'checkbox' }); cb.checked = ids.has(it.id);
+        cb.addEventListener('change', () => {
+          if (cb.checked) ids.add(it.id); else ids.delete(it.id);
+          x.restuIds = [...ids];
+          const price = R.priceFor(x.restuIds.map(catalogById).filter(Boolean));
+          if (price) x.price = price;
+          onPick(); changed();
+        });
+        return h('label', { class: 'chip-check' }, cb, `${it.name} · ${formatPrice(String(it.price))}`);
+      })),
+      h('small', {}, 'Si marcas varios con precios distintos, se muestra "DESDE" el más barato.'));
+  }
+
+  async function photoFromUrl(url) {
+    if (!url) return null;
+    try { const r = await fetch(url); if (!r.ok) return null; return await readExtraPhoto(await r.blob()); } catch (e) { return null; }
+  }
+
+  async function syncRestu() {
+    const slug = String(project.restu.slug || '').trim().toLowerCase();
+    const btn = $('#restuBtn'), msg = $('#restuMsg');
+    if (!slug) { msg.textContent = 'Escribe el nombre del local en Restu (lo que va después de menu.restu.app/).'; return; }
+    btn.disabled = true; msg.classList.remove('err'); msg.textContent = 'Conectando con Restu…';
+    try {
+      const d = await R.fetchStorefront(slug);
+      const catalog = R.catalogFrom(d);
+      project.restu.slug = slug;
+      project.restu.catalog = catalog;
+      ensureUids();
+      R.autoLink(project, catalog);
+      const prices = R.applyPrices(project, catalog);
+      const promos = R.syncPromos(project, d, catalog, uid);
+      project.restu.lastSync = catalog.fetchedAt;
+      restuReport = { ...prices, promos };
+      drawForm(); changed(true);
+    } catch (e) {
+      console.error(e);
+      msg.classList.add('err'); msg.textContent = e.message;
+    } finally { const b = $('#restuBtn'); if (b) b.disabled = false; }
+  }
+
+  function drawRestu() {
+    const rs = project.restu, cat = rs.catalog, box = $('#restu');
+    const slug = textInput(rs, 'slug');
+    slug.placeholder = 'smashcar';
+    const when = rs.lastSync ? new Date(rs.lastSync).toLocaleString('es-CL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : null;
+    const parts = [
+      h('p', { class: 'muted' }, 'Trae los precios y las promociones de tu carta en Restu. Tus fotos y nombres del video no cambian.'),
+      h('div', { class: 'restu-row' },
+        field('Local en Restu', h('div', { class: 'slug' }, h('span', {}, 'menu.restu.app/'), slug)),
+        h('button', { class: 'btn primary small', id: 'restuBtn', onclick: syncRestu }, 'ACTUALIZAR')),
+      h('p', { class: 'muted', id: 'restuMsg' }, when ? `Última actualización: ${when} · ${cat.name} · ${cat.items.length} productos` : 'Todavía no se ha conectado.'),
+    ];
+    if (restuReport) {
+      const { changes, missing, promos } = restuReport;
+      const list = (title, rows, cls = '') => rows.length ? h('div', { class: 'report ' + cls }, h('strong', {}, title), h('ul', {}, rows.map(r => h('li', {}, r)))) : null;
+      parts.push(
+        changes.length ? list(`Precios actualizados (${changes.length})`, changes.map(c => `${c.where}: ${c.from || 'sin precio'} → ${c.to}`), 'ok')
+          : h('div', { class: 'report ok' }, h('strong', {}, 'Los precios ya estaban al día.')),
+        list('Ya no existen en Restu (quedó el precio anterior)', missing, 'warn'),
+        list('Promos nuevas desde Restu', promos.added, 'ok'),
+        list('Promos que terminaron en Restu (se quitaron)', promos.ended));
+    }
+    if (cat) {
+      const manual = [];
+      for (const b of project.burgers) for (const q of b.prices) if (!q.restuId) manual.push(`${b.name}${q.label ? ' ' + q.label : ''}`);
+      for (const x of project.extras.items) if (!(x.restuIds || []).length) manual.push(x.name);
+      if (manual.length) parts.push(h('div', { class: 'report warn' }, h('strong', {}, 'Con precio manual (sin vincular)'),
+        h('ul', {}, manual.map(m => h('li', {}, m))), h('small', {}, 'Elige su producto de Restu dentro de su tarjeta, o déjalo así si no se vende en Restu.')));
+      const free = R.unlinked(project, cat);
+      const add = (label, fn) => h('button', { class: 'link', onclick: async e => {
+        e.target.disabled = true; e.target.textContent = 'Agregando…';
+        await fn(); drawForm(); changed(true);
+      } }, label);
+      const rows = [
+        ...free.burgers.map(g => h('li', {}, `${g.base} (${g.items.map(i => i.variant || formatPrice(String(i.price))).join(' / ')}) `,
+          project.burgers.length < 6 ? add('+ Agregar a burgers', async () => {
+            const b = R.burgerFromGroup(g); b.uid = uid(); b.image = await photoFromUrl(b.imageUrl); delete b.imageUrl;
+            project.burgers.push(b);
+          }) : null)),
+        ...free.extras.map(i => h('li', {}, `${i.name} · ${formatPrice(String(i.price))} `,
+          project.extras.items.length < 6 ? add('+ Agregar a extras', async () => {
+            const x = R.extraFromItem(i); x.uid = uid(); x.image = await photoFromUrl(x.imageUrl); delete x.imageUrl;
+            project.extras.items.push(x);
+          }) : null)),
+      ];
+      if (rows.length) parts.push(h('div', { class: 'report' }, h('strong', {}, 'En Restu pero no en el video'), h('ul', {}, rows),
+        h('small', {}, 'Las fotos de Restu traen fondo y texto: para el video conviene cambiarlas por un PNG sin fondo.')));
+    }
+    box.replaceChildren(...parts.filter(Boolean));
+  }
+
+  // ------------------------------------------------------------ promociones y combos
+  const DISPLAY = [['scene', 'Escena propia'], ['band', 'En el menú'], ['both', 'Ambas']];
+  function drawPromos() {
+    const pm = project.promos, box = $('#promos'), n = pm.items.length;
+    box.innerHTML = '';
+    box.append(
+      h('p', { class: 'muted' }, 'Las promos vigentes de Restu llegan solas al actualizar. También puedes crear otras solo para el video.'),
+      h('div', { class: 'row2' }, field('Duración de cada escena (s)', textInput(project.durations, 'promo', { type: 'number', step: 0.5, min: 3, max: 15 })), h('span')));
+    const owners = [
+      ...project.burgers.map(b => ({ uid: b.uid, name: b.name || 'Burger' })),
+      ...project.extras.items.map(x => ({ uid: x.uid, name: x.name || 'Extra' })),
+    ];
+    pm.items.forEach((pr, i) => {
+      const restu = pr.source === 'restu';
+      const head = h('strong', {}, pr.title || 'Promo');
+      const move = d => { const j = i + d; if (j < 0 || j >= n) return; [pm.items[i], pm.items[j]] = [pm.items[j], pm.items[i]]; drawPromos(); changed(true); };
+      const displayBtns = h('div', { class: 'orientation', role: 'group', 'aria-label': 'Cómo se muestra la promo' },
+        DISPLAY.map(([v, l]) => h('button', { type: 'button', class: 'btn', 'aria-pressed': String((pr.display || 'scene') === v),
+          onclick: () => { pr.display = v; drawPromos(); changed(true); } }, l)));
+      const shows = new Set(pr.shows || []);
+      const showChips = h('div', { class: 'chips' }, owners.map(o => {
+        const cb = h('input', { type: 'checkbox' }); cb.checked = shows.has(o.uid);
+        cb.addEventListener('change', () => {
+          // mantiene el orden en que se marcan: la primera foto va al centro
+          pr.shows = cb.checked ? [...(pr.shows || []).filter(u => u !== o.uid), o.uid] : (pr.shows || []).filter(u => u !== o.uid);
+          changed(true);
+        });
+        return h('label', { class: 'chip-check' }, cb, o.name);
+      }));
+      const photo = h('div', { class: 'photo' },
+        pr.image ? h('img', { class: 'thumb', alt: '', src: pr.image }) : null,
+        h('div', {},
+          h('button', { class: 'btn', onclick: async () => {
+            const f = await pickFile('image/png,image/webp,image/jpeg'); if (!f) return;
+            pr.image = await readExtraPhoto(f); drawPromos(); changed(true);
+          } }, pr.image ? 'Cambiar foto propia' : 'Usar foto propia'),
+          pr.image ? h('button', { class: 'link', onclick: () => { pr.image = null; drawPromos(); changed(true); } }, 'Quitar foto propia') : null));
+      box.append(h('div', { class: 'card' + (pr.enabled === false ? ' off' : '') },
+        h('div', { class: 'card-head' }, h('div', { class: 'title-tag' }, head, h('span', { class: 'tag' + (restu ? ' restu' : '') }, restu ? 'RESTU' : 'MANUAL')),
+          h('div', { class: 'btns' },
+            h('button', { class: 'icon-btn', title: 'Subir', disabled: i === 0, onclick: () => move(-1) }, '↑'),
+            h('button', { class: 'icon-btn', title: 'Bajar', disabled: i === n - 1, onclick: () => move(1) }, '↓'),
+            restu ? null : h('button', { class: 'icon-btn danger', title: 'Eliminar', onclick: () => {
+              if (!confirm(`¿Eliminar ${pr.title || 'esta promo'}?`)) return;
+              pm.items.splice(i, 1); drawPromos(); changed(true);
+            } }, '🗑'))),
+        check(pr, 'enabled', 'Mostrar en el video'),
+        h('div', { class: 'field' }, h('span', {}, 'Cómo se muestra'), displayBtns),
+        h('div', { class: 'row2' },
+          field('Etiqueta', textInput(pr, 'badge', { upper: true }), 'Ej: COMBO, 2X1, OFERTA'),
+          field('Precio', textInput(pr, 'price', { onblur: el => { const f = formatPrice(el.value); if (f !== el.value) { el.value = f; pr.price = f; changed(); } } }), 'Ej: $10.290, 2x1, -20%')),
+        field('Título', textInput(pr, 'title', { upper: true, after: () => { head.textContent = pr.title || 'Promo'; } })),
+        field('Descripción', textInput(pr, 'subtitle', { upper: true, multiline: true, rows: 2 })),
+        h('div', { class: 'row2' },
+          field('Precio normal (opcional)', textInput(pr, 'regular', { onblur: el => { const f = formatPrice(el.value); if (f !== el.value) { el.value = f; pr.regular = f; changed(); } } }), 'Si es mayor, sale "AHORRAS"'),
+          field('Cuándo (opcional)', textInput(pr, 'when', { upper: true }), 'Ej: SOLO MARTES')),
+        h('div', { class: 'field' }, h('span', {}, 'Fotos que salen'), showChips, h('small', {}, 'La primera que marques va al centro. O sube una foto propia de la promo:')),
+        photo,
+        restu ? h('small', { class: 'muted' }, 'Al actualizar desde Restu se refrescan el precio, el precio normal y el horario. Para quitarla, desmarca "Mostrar en el video" o desactívala en Restu.') : null));
+    });
+    box.append(h('button', { class: 'btn wide', disabled: n >= 6, onclick: () => {
+      pm.items.push({ id: uid(), source: 'manual', enabled: true, display: 'scene', badge: 'PROMO', title: 'NUEVA PROMO', subtitle: '', price: '', regular: '', when: '', shows: project.burgers[0] ? [project.burgers[0].uid] : [], image: null });
+      drawPromos(); changed(true);
+    } }, n >= 6 ? 'Máximo 6 promos' : '+ Agregar promoción'));
     syncSummaries();
   }
 
@@ -409,8 +627,10 @@
       check(ef, 'steam', 'Vapor detrás de las burgers'), check(ef, 'embers', 'Chispas que suben'),
       check(ef, 'fire', 'Fuego en la parte de abajo'), check(ef, 'glow', 'Brillo anaranjado'),
       check(ef, 'rays', 'Rayos y anillos de luz'), check(ef, 'shake', 'Rebote y temblor al caer'));
+    drawRestu();
     drawBurgers();
     drawExtras();
+    drawPromos();
     const sel = $('#minutes'); sel.value = String(project.exportMinutes);
     updateTotals();
   }
@@ -492,7 +712,7 @@
     $('#cancelBtn').addEventListener('click', () => { cancel = true; });
     $('#saveBtn').addEventListener('click', saveJson);
     $('#openBtn').addEventListener('click', openJson);
-    $('#resetBtn').addEventListener('click', () => { if (confirm('¿Volver al menú original? Se pierden los cambios no guardados.')) { project = clone(DEFAULT); drawForm(); changed(true); } });
+    $('#resetBtn').addEventListener('click', () => { if (confirm('¿Volver al menú original? Se pierden los cambios no guardados.')) { project = normalizeProject(null); restuReport = null; drawForm(); changed(true); } });
     $('#fsBtn').addEventListener('click', () => view.requestFullscreen && view.requestFullscreen());
     if (!('VideoEncoder' in window)) $('#exportWarn').hidden = false;
     await rebuild();

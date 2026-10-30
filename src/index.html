@@ -42,6 +42,29 @@ input:focus,textarea:focus,select:focus{outline:2px solid var(--yel);outline-off
 .sa-row input{accent-color:var(--yel);width:100%}
 .sa-val{font-variant-numeric:tabular-nums;color:var(--muted);text-align:right}
 .safe-area .link:disabled{color:var(--muted);opacity:.5;cursor:default}
+.restu-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end}
+.restu-row .field{margin:0}
+.slug{display:flex;align-items:center;background:#0f0c0a;border:1px solid var(--line);border-radius:8px;padding-left:10px}
+.slug span{color:var(--muted);white-space:nowrap}
+.slug input{border:0;background:transparent;padding-left:2px}
+.btn.primary.small{font-size:16px;padding:9px 16px}
+#restuMsg.err{color:#ff8a7a}
+.report{border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:8px 0;background:#120f0c}
+.report strong{display:block;font-size:13px;margin-bottom:4px}
+.report.ok{border-color:#3d6b34}.report.ok strong{color:#9be08a}
+.report.warn{border-color:#7a5a1c}.report.warn strong{color:var(--yel)}
+.report ul{margin:0;padding-left:18px;font-size:13px}
+.report li{margin:2px 0}
+.report small{display:block;color:var(--muted);font-size:12px;margin-top:4px}
+.price-row .restu-link{grid-column:1/-1;font-size:12px;padding:5px 8px;color:var(--muted)}
+.price-row.linked input:nth-child(2){border-color:#3d6b34}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip-check{display:flex;align-items:center;gap:6px;background:#0f0c0a;border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:12px;cursor:pointer}
+.chip-check input{accent-color:var(--yel);margin:0}
+.title-tag{display:flex;align-items:center;gap:8px;min-width:0}
+.tag{font:11px Roboto,system-ui,sans-serif;font-weight:700;letter-spacing:.5px;border-radius:4px;padding:2px 6px;background:var(--panel2);color:var(--muted);border:1px solid var(--line)}
+.tag.restu{color:#ffb27a;border-color:#7a4a25}
+.card.off{opacity:.55}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
 .check{display:flex;gap:9px;align-items:center;margin:7px 0;cursor:pointer}
@@ -118,8 +141,10 @@ input:focus,textarea:focus,select:focus{outline:2px solid var(--yel);outline-off
       <p class="muted" id="formatInfo"></p>
       <div class="field safe-area" id="safeArea"></div>
     </div></details>
+    <details open><summary>Restu <em>precios automáticos</em></summary><div class="inner" id="restu"></div></details>
     <details open><summary>Burgers <em id="burgersSum"></em><small id="burgersCount"></small></summary><div class="inner" id="burgers"></div></details>
     <details open><summary>Extras <em id="extrasSum"></em><small id="extrasCount"></small></summary><div class="inner" id="extras"></div></details>
+    <details open><summary>Promociones y combos <small id="promosCount"></small></summary><div class="inner" id="promos"></div></details>
     <details open><summary>Tiempos</summary><div class="inner" id="times"></div></details>
     <details><summary>Marca y contacto</summary><div class="inner" id="brand"></div></details>
     <details><summary>Efectos</summary><div class="inner" id="effects"></div></details>
@@ -166,6 +191,7 @@ input:focus,textarea:focus,select:focus{outline:2px solid var(--yel);outline-off
 <script>/*MUXER*/</script>
 <script>/*ENGINE*/</script>
 <script>/*EXPORTER*/</script>
+<script>/*RESTU*/</script>
 <script>
 if (!window.SMASH_ASSETS || !window.SmashEngine) {
   // La plantilla de src necesita el HTML armado, que incluye fotos y tipografías.
